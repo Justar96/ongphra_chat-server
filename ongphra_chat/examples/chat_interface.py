@@ -3,10 +3,13 @@ import asyncio
 import json
 import httpx
 import os
+import time
 from datetime import datetime
 from typing import Dict, Optional
 
 API_URL = "http://localhost:8000/fortune"
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # seconds
 
 class FortuneTellerChat:
     """Simple chat interface for the Thai Fortune Teller API"""
@@ -46,24 +49,41 @@ class FortuneTellerChat:
                 payload["birth_date"] = self.user_info["birth_date"]
                 payload["thai_day"] = self.user_info["thai_day"]
             
-            # Send request to API
-            try:
-                print(f"Sending request to {API_URL} with payload: {payload}")
-                response = await client.post(API_URL, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                print(f"Received response: {data}")
-                return data["fortune"]
-            except httpx.HTTPStatusError as e:
-                error_detail = "Unknown error"
+            # Send request to API with retries
+            print(f"Sending request to {API_URL} with payload: {payload}")
+            
+            for attempt in range(MAX_RETRIES):
                 try:
-                    error_json = e.response.json()
-                    error_detail = error_json.get('detail', str(e))
-                except Exception:
-                    error_detail = f"Status code: {e.response.status_code}, Response: {e.response.text}"
-                return f"Error: {error_detail}"
-            except Exception as e:
-                return f"An error occurred: {str(e)}"
+                    response = await client.post(API_URL, json=payload, timeout=30.0)
+                    response.raise_for_status()
+                    data = response.json()
+                    print(f"Received response: {data}")
+                    return data["fortune"]
+                except httpx.HTTPStatusError as e:
+                    error_detail = "Unknown error"
+                    try:
+                        error_json = e.response.json()
+                        error_detail = error_json.get('detail', str(e))
+                    except Exception:
+                        error_detail = f"Status code: {e.response.status_code}, Response: {e.response.text}"
+                    
+                    if attempt < MAX_RETRIES - 1:
+                        print(f"Request failed (attempt {attempt+1}/{MAX_RETRIES}): {error_detail}. Retrying...")
+                        time.sleep(RETRY_DELAY)
+                    else:
+                        return f"Error: {error_detail}"
+                except httpx.RequestError as e:
+                    if attempt < MAX_RETRIES - 1:
+                        print(f"Request failed (attempt {attempt+1}/{MAX_RETRIES}): {str(e)}. Retrying...")
+                        time.sleep(RETRY_DELAY)
+                    else:
+                        return f"Connection error: {str(e)}"
+                except Exception as e:
+                    if attempt < MAX_RETRIES - 1:
+                        print(f"Unexpected error (attempt {attempt+1}/{MAX_RETRIES}): {str(e)}. Retrying...")
+                        time.sleep(RETRY_DELAY)
+                    else:
+                        return f"An error occurred: {str(e)}"
     
     def _set_birth_info(self, birth_info: str) -> str:
         """Set the user's birth information"""
