@@ -2,7 +2,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # App settings
     debug: bool = Field(False, env="DEBUG")
     log_level: str = Field("INFO", env="LOG_LEVEL")
+    environment: str = Field("development", env="ENVIRONMENT")  # 'development', 'staging', or 'production'
+    
+    # CORS settings
+    cors_origins: List[str] = Field(["*"], env="CORS_ORIGINS")
     
     # Paths
     base_dir: Path = Path(__file__).parent.parent.parent
@@ -53,6 +57,10 @@ class Settings(BaseSettings):
             
         if self.readings_path is None:
             self.readings_path = self.data_dir / "readings.csv"
+            
+        # Parse CORS origins if provided as a comma-separated string
+        if isinstance(self.cors_origins, str):
+            self.cors_origins = [origin.strip() for origin in self.cors_origins.split(",")]
 
 
 @lru_cache()

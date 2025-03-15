@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        body {
+            font-family: 'Sarabun', sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2cm;
+            border-bottom: 1px solid #8e44ad;
+            padding-bottom: 0.5cm;
+        }
+        .header h1 {
+            color: #8e44ad;
+            margin-bottom: 0.2cm;
+        }
+        .birth-info {
+            background-color: #f0e6f6;
+            padding: 0.5cm;
+            border-radius: 5px;
+            margin-bottom: 1cm;
+        }
+        .birth-info-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        .birth-info-item {
+            flex: 1;
+        }
+        .meaning-card {
+            border-left: 4px solid #8e44ad;
+            margin-bottom: 1cm;
+            padding: 0.5cm;
+            background-color: #f8f9fa;
+            page-break-inside: avoid;
+        }
+        .meaning-heading {
+            color: #8e44ad;
+            font-weight: bold;
+            margin-top: 0;
+            margin-bottom: 0.3cm;
+        }
+        .meaning-category {
+            display: inline-block;
+            padding: 0.1cm 0.3cm;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-bottom: 0.3cm;
+            color: white;
+        }
+        .category-CAREER {
+            background-color: #3498db;
+        }
+        .category-RELATIONSHIP {
+            background-color: #e74c3c;
+        }
+        .category-HEALTH {
+            background-color: #2ecc71;
+        }
+        .category-FINANCE {
+            background-color: #f1c40f;
+            color: black;
+        }
+        .category-GENERAL {
+            background-color: #95a5a6;
+        }
+        .category-PERSONALITY {
+            background-color: #9b59b6;
+        }
+        .match-score {
+            float: right;
+            font-size: 0.8em;
+            color: #666;
+        }
+        .meaning-text {
+            margin-bottom: 0.3cm;
+        }
+        .meaning-meta {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 1cm;
+            border-top: 1px solid #ddd;
+            padding-top: 0.5cm;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Thai Fortune Teller</h1>
+        <p>Your Personal Fortune Reading</p>
+    </div>
+
+    <div class="birth-info">
+        <div class="birth-info-row">
+            <div class="birth-info-item">
+                <strong>Birth Date:</strong> {{ birth_date }}
+            </div>
+            <div class="birth-info-item">
+                <strong>Thai Day:</strong> {{ thai_day }}
+            </div>
+            <div class="birth-info-item">
+                <strong>Question:</strong> {{ question if question else "General Reading" }}
+            </div>
+        </div>
+    </div>
+
+    <h2>Your Reading Insights</h2>
+    
+    {% if meanings %}
+        {% for meaning in meanings %}
+            <div class="meaning-card">
+                <h3 class="meaning-heading">
+                    {{ meaning.heading }}
+                    {% if meaning.match_score is defined %}
+                        <span class="match-score">Match: {{ "%.1f"|format(meaning.match_score) }}/10</span>
+                    {% endif %}
+                </h3>
+                
+                {% if meaning.category %}
+                    <span class="meaning-category category-{{ meaning.category }}">{{ meaning.category }}</span>
+                {% endif %}
+                
+                <p class="meaning-text">{{ meaning.meaning }}</p>
+                
+                <div class="meaning-meta">
+                    Base {{ meaning.base }}, Position {{ meaning.position }}, Element Value {{ meaning.value }}
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No readings found for your birth information.</p>
+    {% endif %}
+
+    <div class="footer">
+        <p>Generated on {{ now().strftime('%Y-%m-%d %H:%M:%S') }} | Thai Fortune Teller &copy; 2025</p>
+    </div>
+</body>
+</html> 

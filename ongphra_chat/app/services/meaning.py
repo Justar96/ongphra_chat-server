@@ -6,6 +6,7 @@ from app.domain.meaning import Meaning, MeaningCollection
 from app.repository.category_repository import CategoryRepository
 from app.repository.reading_repository import ReadingRepository
 from app.core.exceptions import MeaningExtractionError
+from app.core.logging import get_logger
 
 
 class MeaningService:
@@ -25,6 +26,8 @@ class MeaningService:
         """
         self.category_repository = category_repository
         self.reading_repository = reading_repository
+        self.logger = get_logger(__name__)
+        self.logger.info("Initialized MeaningService")
         
         # Pre-defined keyword map for topic identification
         self.keyword_map = {
@@ -49,9 +52,11 @@ class MeaningService:
                 "เรียน", "การศึกษา", "สอบ", "โรงเรียน"
             ]
         }
+        self.logger.debug(f"Initialized keyword map with {len(self.keyword_map)} categories")
     
     def identify_topics(self, question: str) -> Set[str]:
         """Identify relevant topics based on the question"""
+        self.logger.debug(f"Identifying topics for question: '{question}'")
         question_lower = question.lower()
         topics = set()
         
@@ -59,23 +64,31 @@ class MeaningService:
         for category, keywords in self.keyword_map.items():
             if any(keyword in question_lower for keyword in keywords):
                 topics.add(category)
+                self.logger.debug(f"Matched category: {category}")
         
         # Default to general readings if no specific category is identified
         if not topics:
             topics.add("GENERAL")
             topics.add("PERSONALITY")
+            self.logger.debug("No specific topics identified, using default categories")
             
+        self.logger.info(f"Identified topics: {', '.join(topics)}")
         return topics
     
     async def get_category_ids(self, topics: Set[str]) -> List[int]:
         """Get category IDs based on topics"""
+        self.logger.debug(f"Getting category IDs for topics: {topics}")
         category_ids = []
         
         for topic in topics:
             category = await self.category_repository.get_by_name(topic)
             if category:
                 category_ids.append(category.id)
+                self.logger.debug(f"Found category ID {category.id} for topic {topic}")
+            else:
+                self.logger.warning(f"No category found for topic: {topic}")
                 
+        self.logger.info(f"Retrieved {len(category_ids)} category IDs: {category_ids}")
         return category_ids
     
     async def extract_meanings(self, bases: Bases, question: str) -> MeaningCollection:
@@ -83,6 +96,7 @@ class MeaningService:
         Extract relevant meanings based on the bases and question
         Returns a collection of meanings with context
         """
+        self.logger.info(f"Extracting meanings for question: '{question}'")
         try:
             # Identify topics from question
             topics = self.identify_topics(question)
@@ -91,7 +105,9 @@ class MeaningService:
             category_ids = await self.get_category_ids(topics)
             
             # Get relevant readings
+            self.logger.debug(f"Fetching readings for category IDs: {category_ids}")
             readings = await self.reading_repository.get_by_categories(category_ids)
+            self.logger.info(f"Found {len(readings)} relevant readings")
             
             # Map readings to meanings
             meanings = []
@@ -100,10 +116,12 @@ class MeaningService:
             for reading in readings:
                 base_idx = reading.base
                 if base_idx > 4:  # Only use bases 1-4 for now
+                    self.logger.debug(f"Skipping reading with base {base_idx} (only using bases 1-4)")
                     continue
                     
                 position = reading.position
                 if position < 1 or position > 7:
+                    self.logger.debug(f"Skipping reading with invalid position {position}")
                     continue
                 
                 # Get value from appropriate base
@@ -122,8 +140,12 @@ class MeaningService:
                 )
                 
                 meanings.append(meaning)
+                self.logger.debug(f"Added meaning: Base {base_idx}, Position {position}, Value {value}")
             
-            return MeaningCollection(items=meanings)
+            result = MeaningCollection(items=meanings)
+            self.logger.info(f"Extracted {len(meanings)} meanings for question")
+            return result
             
         except Exception as e:
+            self.logger.error(f"Error extracting meanings: {str(e)}", exc_info=True)
             raise MeaningExtractionError(f"Error extracting meanings: {str(e)}")

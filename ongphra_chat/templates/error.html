@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Kanit', 'Sarabun', sans-serif;
+        }
+        .error-card {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin-top: 2rem;
+            margin-bottom: 2rem;
+        }
+        .header-section {
+            background-color: #8e44ad;
+            color: white;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            border-radius: 0 0 10px 10px;
+        }
+        .error-icon {
+            font-size: 4rem;
+            color: #e74c3c;
+            margin-bottom: 1rem;
+        }
+        .btn-fortune {
+            background-color: #8e44ad;
+            border-color: #8e44ad;
+            color: white;
+            font-weight: 500;
+            padding: 0.5rem 2rem;
+        }
+        .btn-fortune:hover {
+            background-color: #7d3c98;
+            border-color: #7d3c98;
+            color: white;
+        }
+    </style>
+    <!-- Thai font -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&family=Sarabun:wght@300;400;500&display=swap" rel="stylesheet">
+    <!-- Bootstrap icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <div class="header-section">
+        <div class="container">
+            <h1 class="text-center">Thai Fortune Teller</h1>
+            <p class="text-center mb-0">Error</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="error-card text-center">
+                    <i class="bi bi-exclamation-triangle-fill error-icon"></i>
+                    <h2 class="mb-4">An Error Occurred</h2>
+                    
+                    <div class="alert alert-danger">
+                        {{ error }}
+                    </div>
+                    
+                    <p class="mb-4">Please try again with different information or contact support if the problem persists.</p>
+                    
+                    <a href="/" class="btn btn-fortune">Return to Home</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-light py-3 mt-5">
+        <div class="container">
+            <p class="text-center text-muted mb-0">© 2025 Thai Fortune Teller. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 

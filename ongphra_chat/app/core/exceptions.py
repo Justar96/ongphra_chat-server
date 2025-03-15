@@ -33,3 +33,8 @@ class RepositoryError(FortuneServiceException):
 class ValidationError(FortuneServiceException):
     """Exception raised for validation errors"""
     pass
+
+
+class ReadingError(FortuneServiceException):
+    """Exception raised for errors in reading extraction or processing"""
+    pass
