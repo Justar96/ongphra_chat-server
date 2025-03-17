@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Fortune Telling Chat Interface</title>
+            <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500&family=Sarabun:wght@300;400;500&display=swap" rel="stylesheet">
+            <link rel="stylesheet" href="/static/css/style.css">
+        </head>
+        <body>
+            <div class="container">
+                <h1>Thai Fortune Telling Chat Interface</h1>
+                
+                <div class="user-info">
+                    <h2>User Information</h2>
+                    <div class="form-group">
+                        <label for="birth-date">Birth Date:</label>
+                        <input type="date" id="birth-date" name="birth-date">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="thai-day">Thai Day:</label>
+                        <select id="thai-day" name="thai-day">
+                            <option value="">Select Thai Day</option>
+                            <option value="อาทิตย์">อาทิตย์ (Sunday)</option>
+                            <option value="จันทร์">จันทร์ (Monday)</option>
+                            <option value="อังคาร">อังคาร (Tuesday)</option>
+                            <option value="พุธ">พุธ (Wednesday)</option>
+                            <option value="พฤหัสบดี">พฤหัสบดี (Thursday)</option>
+                            <option value="ศุกร์">ศุกร์ (Friday)</option>
+                            <option value="เสาร์">เสาร์ (Saturday)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="language">Language:</label>
+                        <select id="language" name="language">
+                            <option value="thai">Thai</option>
+                            <option value="english">English</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="stream-mode">
+                            <input type="checkbox" id="stream-mode" name="stream-mode" checked>
+                            Enable Streaming Mode
+                        </label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button id="connect-btn" class="btn">Connect with Birth Info</button>
+                        <button id="general-btn" class="btn">General Chat</button>
+                        <button id="disconnect-btn" class="btn" disabled>Disconnect</button>
+                        <span>Status: <span id="status-indicator" style="color: red;">Disconnected</span></span>
+                    </div>
+                </div>
+                
+                <div class="chat-container">
+                    <div class="chat-header">
+                        Fortune Telling Chat
+                    </div>
+                    <div class="chat-messages">
+                        <div class="message bot-message">
+                            <div class="message-sender">System</div>
+                            <div class="message-content">Welcome to the Fortune Telling Chat Interface. Please connect to start a session.</div>
+                        </div>
+                    </div>
+                    <div class="chat-input">
+                        <input type="text" id="message-input" placeholder="Type your question here..." disabled>
+                        <button id="send-btn" disabled>Send</button>
+                    </div>
+                </div>
+            </div>
+            
+            <script src="/static/js/chat.js"></script>
+        </body>
+        </html>
+        

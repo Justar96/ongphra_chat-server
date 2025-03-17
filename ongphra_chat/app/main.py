@@ -2,9 +2,9 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from fastapi import FastAPI, Request, Response, Form, Depends, Query
+from fastapi import FastAPI, Request, Response, Form, Depends, Query, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import time
 import uvicorn
@@ -13,57 +13,84 @@ from typing import Optional
 import tempfile
 import importlib.util
 
-from app.api.router import router as fortune_router
-from app.core.exceptions import FortuneServiceException
-from app.config.settings import get_settings
-from app.repository.category_repository import CategoryRepository
-from app.repository.reading_repository import ReadingRepository
-from app.services.reading_service import ReadingService, get_reading_service
-from app.domain.meaning import Category, Reading
+from ongphra_chat.app.config.settings import get_settings
+from ongphra_chat.app.config.database import DatabaseManager
+from ongphra_chat.app.repository.category_repository import CategoryRepository
+from ongphra_chat.app.repository.reading_repository import ReadingRepository
+from ongphra_chat.app.services.reading_service import ReadingService, get_reading_service
+from ongphra_chat.app.domain.meaning import Category, Reading
+from ongphra_chat.app.core.logging import setup_logging, get_logger
+from ongphra_chat.app.routers.api_router import router as api_router
 
-# Get settings
+# Setup logging
+setup_logging()
+logger = get_logger(__name__)
+
+# Initialize settings
 settings = get_settings()
 
 # Ensure logs directory exists
 logs_dir = os.path.join(settings.base_dir, "logs")
 os.makedirs(logs_dir, exist_ok=True)
 
-# Ensure static and templates directories exist
+# Ensure static directory exists
 static_dir = os.path.join(settings.base_dir, "static")
-templates_dir = os.path.join(settings.base_dir, "templates")
 os.makedirs(static_dir, exist_ok=True)
-os.makedirs(templates_dir, exist_ok=True)
 
 # Configure logging
 log_file = os.path.join(logs_dir, "app.log")
 csv_log_file = os.path.join(logs_dir, "csv_operations.log")
 
-# Configure root logger
-logging.basicConfig(
-    level=getattr(logging, settings.log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # Console handler
-        RotatingFileHandler(
-            log_file, 
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5,
-            encoding='utf-8'  # Ensure UTF-8 encoding for Thai characters
-        )
-    ]
-)
+# Configure root logger with error handling
+try:
+    from app.core.logging import SafeRotatingFileHandler
+    
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),  # Console handler
+            SafeRotatingFileHandler(
+                log_file, 
+                maxBytes=10*1024*1024,  # 10MB
+                backupCount=5,
+                encoding='utf-8',  # Ensure UTF-8 encoding for Thai characters
+                delay=True  # Delay file opening until first log record is emitted
+            )
+        ]
+    )
+except Exception as e:
+    # Fallback to console-only logging if file logging fails
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]  # Console handler only
+    )
+    logging.warning(f"Failed to set up file logging: {str(e)}. Using console logging only.")
 
-# Configure CSV operations logger
-csv_logger = logging.getLogger('app.repository')
-csv_logger.setLevel(logging.DEBUG if settings.debug else logging.INFO)
-csv_handler = RotatingFileHandler(
-    csv_log_file,
-    maxBytes=5*1024*1024,  # 5MB
-    backupCount=3,
-    encoding='utf-8'  # Ensure UTF-8 encoding for Thai characters
-)
-csv_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-csv_logger.addHandler(csv_handler)
+# Configure CSV operations logger with error handling
+try:
+    from app.core.logging import SafeRotatingFileHandler
+    
+    csv_logger = logging.getLogger('app.repository')
+    csv_logger.setLevel(logging.DEBUG if settings.debug else logging.INFO)
+    csv_handler = SafeRotatingFileHandler(
+        csv_log_file,
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8',  # Ensure UTF-8 encoding for Thai characters
+        delay=True  # Delay file opening until first log record is emitted
+    )
+    csv_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    csv_logger.addHandler(csv_handler)
+except Exception as e:
+    # If CSV file handler setup fails, ensure we have console logging
+    csv_logger = logging.getLogger('app.repository')
+    if not any(isinstance(h, logging.StreamHandler) for h in csv_logger.handlers):
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        csv_logger.addHandler(console_handler)
+    logging.warning(f"Failed to set up CSV file logging: {str(e)}. Using console logging for repository operations.")
 
 # Configure meaning service logger
 meaning_logger = logging.getLogger('app.services.meaning')
@@ -87,78 +114,52 @@ except Exception as e:
     has_weasyprint = False
     logger.warning(f"Error importing WeasyPrint: {str(e)}. PDF export functionality will be disabled.")
 
-# Try to import ElementMatcher if needed
-try:
-    from app.scripts.element_matcher import ElementMatcher
-    has_element_matcher = True
-except ImportError:
-    has_element_matcher = False
-    logger.warning("ElementMatcher not available. Some functionality may be limited.")
 
-# Check if jinja2 is available
-has_jinja2 = importlib.util.find_spec("jinja2") is not None
-if has_jinja2:
-    try:
-        from fastapi.templating import Jinja2Templates
-        templates = Jinja2Templates(directory=templates_dir)
-        logger.info("Jinja2Templates successfully imported for HTML templating")
-    except Exception as e:
-        has_jinja2 = False
-        logger.warning(f"Error initializing Jinja2Templates: {str(e)}. HTML templating functionality will be disabled.")
-else:
-    logger.warning("Jinja2 not available. HTML templating functionality will be disabled.")
-
-# Create FastAPI app
-app = FastAPI(
-    title="Ongphra Chat API",
-    description="API for fortune telling based on Thai astrology",
-    version="1.0.0",
-    docs_url="/docs" if settings.environment != "production" else None,
-    redoc_url="/redoc" if settings.environment != "production" else None,
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-# Create a dummy templates object if Jinja2 is not available
-if not has_jinja2:
-    class DummyTemplates:
-        def TemplateResponse(self, *args, **kwargs):
-            return JSONResponse({"error": "HTML templating is not available"})
-        
-        def get_template(self, *args, **kwargs):
-            class DummyTemplate:
-                def render(self, *args, **kwargs):
-                    return ""
-            return DummyTemplate()
+def create_application() -> FastAPI:
+    """Create and configure the FastAPI application"""
+    app = FastAPI(
+        title="Ongphra Chat API",
+        description="API for fortune telling and chat with context memory",
+        version="1.0.0"
+    )
     
-    templates = DummyTemplates()
-    logger.warning("Using dummy templates due to missing Jinja2")
+    # Configure CORS
+    origins = settings.cors_origins
+    if isinstance(origins, str):
+        if origins == "*":
+            origins = ["*"]
+        else:
+            origins = [origin.strip() for origin in origins.split(",")]
+    
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Mount static files
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    
+    # Add API router
+    app.include_router(api_router)
+    
+    logger.info("Application initialized")
+    return app
 
-# Include routers
-app.include_router(fortune_router)
+app = create_application()
 
 # Register repositories and services for dependency injection
 @app.on_event("startup")
 async def startup_event():
+    # Initialize database connection pool
+    logger.info("Initializing database connection pool")
+    await DatabaseManager.initialize_pool()
+    
     # Initialize repositories
-    app.state.category_repository = CategoryRepository(
-        os.path.join(settings.base_dir, "data", "categories.csv"),
-        model_class=Category
-    )
-    app.state.reading_repository = ReadingRepository(
-        os.path.join(settings.base_dir, "data", "readings.csv"),
-        model_class=Reading
-    )
+    app.state.category_repository = CategoryRepository()
+    app.state.reading_repository = ReadingRepository()
     
     # Initialize services
     app.state.reading_service = ReadingService(
@@ -167,6 +168,13 @@ async def startup_event():
     )
     
     logging.info("Repositories and services initialized")
+
+# Shutdown event to close database connections
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down application")
+    await DatabaseManager.close_pool()
+    logger.info("Database connections closed")
 
 # Register dependencies
 def get_category_repository():
@@ -204,16 +212,6 @@ async def add_process_time_header(request: Request, call_next):
 
 
 # Exception handlers
-@app.exception_handler(FortuneServiceException)
-async def fortune_exception_handler(request: Request, exc: FortuneServiceException):
-    """Handle FortuneServiceException with appropriate error message"""
-    logger.error(f"FortuneServiceException: {str(exc)}")
-    return JSONResponse(
-        status_code=400,
-        content={"detail": str(exc)},
-    )
-
-
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle general exceptions with a generic error message"""
@@ -231,187 +229,31 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Root endpoint - Web Interface
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    """Root endpoint with web interface"""
-    if not has_jinja2:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "HTML templating is not available"}
-        )
-        
-    return templates.TemplateResponse(
-        "index.html", 
-        {"request": request, "title": "Thai Fortune Teller"}
-    )
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Welcome to Ongphra Chat API",
+        "version": "1.0.0",
+        "status": "online",
+        "docs_url": "/docs"
+    }
 
 
-# Web form submission endpoint
-@app.post("/fortune-web", response_class=HTMLResponse)
-async def fortune_web(
-    request: Request,
-    birth_date: str = Form(...),
-    thai_day: str = Form(...),
-    question: Optional[str] = Form(None)
-):
-    """Process fortune telling form submission"""
-    logger.info(f"Web fortune request: birth_date={birth_date}, thai_day={thai_day}, question={question}")
-    
-    if not has_jinja2:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "HTML templating is not available"}
-        )
-    
-    try:
-        # Parse birth date
-        birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
-        
-        # Check if ElementMatcher is available
-        if not has_element_matcher:
-            return templates.TemplateResponse(
-                "error.html", 
-                {
-                    "request": request, 
-                    "title": "Feature Unavailable",
-                    "error": "This feature is currently unavailable due to missing dependencies."
-                }
-            )
-        
-        # Get element matcher
-        categories_csv = str(settings.categories_path)
-        readings_csv = str(settings.readings_path)
-        matcher = ElementMatcher(categories_csv, readings_csv)
-        
-        # Get meanings
-        meanings = await matcher.get_meanings_for_birth_info(birth_date_obj, thai_day, question)
-        
-        # Render template with results
-        return templates.TemplateResponse(
-            "results.html", 
-            {
-                "request": request, 
-                "title": "Fortune Results",
-                "birth_date": birth_date,
-                "thai_day": thai_day,
-                "question": question,
-                "meanings": meanings.items
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error processing fortune request: {str(e)}", exc_info=True)
-        return templates.TemplateResponse(
-            "error.html", 
-            {
-                "request": request, 
-                "title": "Error",
-                "error": str(e) if settings.debug else "An error occurred processing your request."
-            }
-        )
-
-
-# PDF Export endpoint
-@app.get("/export-pdf")
-async def export_pdf(
-    request: Request,
-    birth_date: str = Query(...),
-    thai_day: str = Query(...),
-    question: Optional[str] = Query(None)
-):
-    """Export fortune reading to PDF"""
-    logger.info(f"PDF export request: birth_date={birth_date}, thai_day={thai_day}, question={question}")
-    
-    # Check if WeasyPrint is available
-    if not has_weasyprint:
-        if has_jinja2:
-            return templates.TemplateResponse(
-                "error.html", 
-                {
-                    "request": request, 
-                    "title": "PDF Export Unavailable",
-                    "error": "PDF export is currently unavailable due to missing dependencies."
-                }
-            )
-        else:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "PDF export is not available due to missing dependencies"}
-            )
-    
-    try:
-        # Parse birth date
-        birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
-        
-        # Check if ElementMatcher is available
-        if not has_element_matcher:
-            return templates.TemplateResponse(
-                "error.html", 
-                {
-                    "request": request, 
-                    "title": "Feature Unavailable",
-                    "error": "This feature is currently unavailable due to missing dependencies."
-                }
-            )
-        
-        # Get element matcher
-        categories_csv = str(settings.categories_path)
-        readings_csv = str(settings.readings_path)
-        matcher = ElementMatcher(categories_csv, readings_csv)
-        
-        # Get meanings
-        meanings = await matcher.get_meanings_for_birth_info(birth_date_obj, thai_day, question)
-        
-        # Generate HTML content
-        html_content = templates.get_template("pdf_template.html").render(
-            title="Fortune Reading PDF",
-            birth_date=birth_date,
-            thai_day=thai_day,
-            question=question,
-            meanings=meanings.items
-        )
-        
-        # Create temporary file for PDF
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            pdf_path = tmp.name
-        
-        # Generate PDF from HTML
-        HTML(string=html_content).write_pdf(pdf_path)
-        
-        # Generate filename for download
-        filename = f"fortune_reading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        
-        # Return PDF file
-        return FileResponse(
-            path=pdf_path,
-            filename=filename,
-            media_type="application/pdf",
-            background=lambda: os.unlink(pdf_path)  # Delete file after sending
-        )
-    except Exception as e:
-        logger.error(f"Error generating PDF: {str(e)}", exc_info=True)
-        return templates.TemplateResponse(
-            "error.html", 
-            {
-                "request": request, 
-                "title": "PDF Export Error",
-                "error": str(e) if settings.debug else "An error occurred generating the PDF."
-            }
-        )
-
-
-# Health check endpoint
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "version": "1.0.0"
+    }
 
 
 if __name__ == "__main__":
-    """Run the application directly"""
+    # Run the application with uvicorn
     uvicorn.run(
-        "app.main:app", 
-        host="0.0.0.0", 
-        port=8000, 
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
         reload=settings.debug
     )

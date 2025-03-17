@@ -1,16 +1,19 @@
 # app/services/calculator.py
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Any
 
 from app.domain.birth import BirthInfo
 from app.domain.bases import Bases, BasesResult
 from app.core.exceptions import CalculationError
-
+from app.core.logging import get_logger
 
 class CalculatorService:
-    """Service for calculating birth bases"""
+    """Service for calculating birth bases using the seven-nine method"""
     
     def __init__(self):
+        self.logger = get_logger(__name__)
+        self.logger.info("Initializing CalculatorService")
+        
         # Thai zodiac years mapping
         self.zodiac_years = {
             "ชวด": 1,  # Rat
@@ -27,136 +30,188 @@ class CalculatorService:
             "กุน": 12,  # Pig
         }
 
-        # Day values and sequences
+        # Day values mapping
         self.day_values = {
-            "อาทิตย์": {"value": 1, "sequence": [1, 2, 3, 4, 5, 6, 7]},  # Sunday
-            "จันทร์": {"value": 2, "sequence": [2, 3, 4, 5, 6, 7, 1]},  # Monday
-            "อังคาร": {"value": 3, "sequence": [3, 4, 5, 6, 7, 1, 2]},  # Tuesday
-            "พุธ": {"value": 4, "sequence": [4, 5, 6, 7, 1, 2, 3]},  # Wednesday
-            "พฤหัสบดี": {"value": 5, "sequence": [5, 6, 7, 1, 2, 3, 4]},  # Thursday
-            "ศุกร์": {"value": 6, "sequence": [6, 7, 1, 2, 3, 4, 5]},  # Friday
-            "เสาร์": {"value": 7, "sequence": [7, 1, 2, 3, 4, 5, 6]},  # Saturday
+            "อาทิตย์": 1,  # Sunday
+            "จันทร์": 2,  # Monday
+            "อังคาร": 3,  # Tuesday
+            "พุธ": 4,  # Wednesday
+            "พฤหัสบดี": 5,  # Thursday
+            "ศุกร์": 6,  # Friday
+            "เสาร์": 7,  # Saturday
         }
-
-        # Month sequences
-        self.month_sequences = {
-            1: [1, 2, 3, 4, 5, 6, 7],   # January
-            2: [2, 3, 4, 5, 6, 7, 1],   # February
-            3: [3, 4, 5, 6, 7, 1, 2],   # March
-            4: [4, 5, 6, 7, 1, 2, 3],   # April
-            5: [5, 6, 7, 1, 2, 3, 4],   # May
-            6: [6, 7, 1, 2, 3, 4, 5],   # June
-            7: [7, 1, 2, 3, 4, 5, 6],   # July
-            8: [1, 2, 3, 4, 5, 6, 7],   # August
-            9: [2, 3, 4, 5, 6, 7, 1],   # September
-            10: [3, 4, 5, 6, 7, 1, 2],  # October
-            11: [4, 5, 6, 7, 1, 2, 3],  # November
-            12: [5, 6, 7, 1, 2, 3, 4]   # December
-        }
-
-        # Special meanings for Base 4
-        self.base4_meanings = {
-            7: "ภาคินี",
-            10: "ลาภี",
-            11: "ราชาโชค",
-            12: "ราชู",
-            13: "มหาจร",
-            15: "จันทร์",
-            16: "โลกบาลก",
-        }
+        
+        # Base labels for formatting output
+        self.day_labels = ["อัตตะ", "หินะ", "ธานัง", "ปิตา", "มาตา", "โภคา", "มัชฌิมา"]
+        self.month_labels = ["ตะนุ", "กดุมภะ", "สหัชชะ", "พันธุ", "ปุตตะ", "อริ", "ปัตนิ"]
+        self.year_labels = ["มรณะ", "สุภะ", "กัมมะ", "ลาภะ", "พยายะ", "ทาสา", "ทาสี"]
+        
+        # Cache for common calculations
+        self._zodiac_cache = {}
     
     def get_zodiac_animal(self, birth_year: int) -> str:
-        """Get the zodiac animal for a given year"""
-        # Convert to Buddhist Era and get zodiac year
-        buddhist_year = birth_year + 543
-        year_mod = buddhist_year % 12
+        """Get the zodiac animal for a given year with caching"""
+        # Check cache first
+        if birth_year in self._zodiac_cache:
+            return self._zodiac_cache[birth_year]
+            
+        # Calculate Thai zodiac year index
+        thai_zodiac_year_index = self.get_thai_zodiac_year_index(birth_year)
         
-        # Map year mod to zodiac animal
+        # Map index to zodiac animal
         zodiac_map = {
-            0: 'ขาล',    # Tiger
-            1: 'เถาะ',   # Rabbit
-            2: 'มะโรง',  # Dragon
-            3: 'มะเส็ง', # Snake
-            4: 'มะเมีย', # Horse
-            5: 'มะแม',   # Goat
-            6: 'วอก',    # Monkey
-            7: 'ระกา',   # Rooster
-            8: 'จอ',     # Dog
-            9: 'กุน',    # Pig
-            10: 'ชวด',   # Rat
-            11: 'ฉลู'    # Ox
+            1: 'ชวด',    # Rat
+            2: 'ฉลู',     # Ox
+            3: 'ขาล',     # Tiger
+            4: 'เถาะ',    # Rabbit
+            5: 'มะโรง',   # Dragon
+            6: 'มะเส็ง',  # Snake
+            7: 'มะเมีย',  # Horse
+            8: 'มะแม',    # Goat
+            9: 'วอก',     # Monkey
+            10: 'ระกา',   # Rooster
+            11: 'จอ',     # Dog
+            12: 'กุน'     # Pig
         }
         
-        return zodiac_map[year_mod]
+        result = zodiac_map[thai_zodiac_year_index]
+        # Store in cache
+        self._zodiac_cache[birth_year] = result
+        
+        return result
+    
+    def get_thai_zodiac_year_index(self, year: int) -> int:
+        """Determine the Thai zodiac year index based on the Gregorian year"""
+        return (year - 4) % 12 + 1
+    
+    def generate_day_values(self, starting_value: int, total_values: int = 7) -> List[int]:
+        """Generate the sequence starting from the given value"""
+        values = list(range(1, total_values + 1))
+        starting_index = starting_value - 1
+        return values[starting_index:] + values[:starting_index]
+    
+    def get_day_of_week_index(self, date: datetime) -> int:
+        """Get the day of the week with Sunday as 1"""
+        return (date.weekday() + 1) % 7 + 1
+    
+    def get_wrapped_index(self, index: int, total_values: int) -> int:
+        """Wrap the index to ensure it cycles within the total number of values"""
+        return ((index - 1) % total_values) + 1
+    
+    def calculate_sum_base(self, base_1: List[int], base_2: List[int], base_3: List[int]) -> List[int]:
+        """Calculate the sum of values from bases 1, 2, and 3 without wrapping"""
+        return [(base_1[i] + base_2[i] + base_3[i]) for i in range(len(base_1))]
     
     def calculate_base1(self, thai_day: str) -> List[int]:
         """Calculate Base 1 sequence from Thai day"""
         if thai_day not in self.day_values:
-            raise CalculationError(f"Invalid Thai day: {thai_day}")
+            self.logger.error(f"Invalid Thai day: {thai_day}")
+            raise CalculationError(f"Invalid Thai day: {thai_day}. Valid values are: {', '.join(self.day_values.keys())}")
         
-        return self.day_values[thai_day]["sequence"]
+        day_index = self.day_values[thai_day]
+        self.logger.debug(f"Calculating Base 1 for day: {thai_day} (index: {day_index})")
+        return self.generate_day_values(day_index)
     
     def calculate_base2(self, month: int) -> List[int]:
         """Calculate Base 2 sequence from month"""
-        if month not in self.month_sequences:
-            raise CalculationError(f"Invalid month: {month}")
+        if month < 1 or month > 12:
+            self.logger.error(f"Invalid month: {month}")
+            raise CalculationError(f"Invalid month: {month}. Valid values are 1-12.")
         
-        return self.month_sequences[month]
+        # Month with December as the first month, plus 1
+        wrapped_month_index = self.get_wrapped_index(month + 1, 12)
+        self.logger.debug(f"Calculating Base 2 for month: {month} (wrapped index: {wrapped_month_index})")
+        return self.generate_day_values(wrapped_month_index)
     
     def calculate_base3(self, birth_year: int) -> Tuple[List[int], str]:
         """Calculate Base 3 sequence from birth year"""
-        # Get zodiac animal
-        zodiac_animal = self.get_zodiac_animal(birth_year)
-        
-        # Get start number from zodiac
-        start_number = self.zodiac_years[zodiac_animal]
-        
-        # Generate sequence based on start number
-        current = start_number
-        sequence = []
-        
-        for _ in range(7):
-            sequence.append(current)
-            current = current % 7 + 1
+        try:
+            # Get Thai zodiac year index
+            thai_zodiac_year_index = self.get_thai_zodiac_year_index(birth_year)
+            wrapped_zodiac_year_index = self.get_wrapped_index(thai_zodiac_year_index, 12)
             
-        return sequence, zodiac_animal
+            # Get zodiac animal
+            zodiac_animal = self.get_zodiac_animal(birth_year)
+            
+            # Generate sequence based on wrapped index
+            sequence = self.generate_day_values(wrapped_zodiac_year_index)
+            
+            self.logger.debug(f"Calculated Base 3 for year {birth_year} (zodiac: {zodiac_animal}, index: {thai_zodiac_year_index}): {sequence}")
+            return sequence, zodiac_animal
+        except Exception as e:
+            self.logger.error(f"Error calculating Base 3: {str(e)}")
+            raise CalculationError(f"Error calculating Base 3: {str(e)}")
     
     def calculate_base4(self, base1: List[int], base2: List[int], base3: List[int]) -> List[int]:
         """Calculate Base 4 sequence by summing bases 1-3"""
-        base4 = []
-        for position in range(7):
-            # Sum of this position from bases 1-3
-            position_sum = (
-                base1[position] + 
-                base2[position] + 
-                base3[position]
-            )
-            base4.append(position_sum)
+        if len(base1) != 7 or len(base2) != 7 or len(base3) != 7:
+            raise CalculationError("All bases must have exactly 7 elements")
+            
+        base4 = self.calculate_sum_base(base1, base2, base3)
+        self.logger.debug(f"Calculated Base 4: {base4}")
         return base4
+    
+    def format_output(self, base1: List[int], base2: List[int], base3: List[int], base4: List[int]) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int], List[int]]:
+        """Format the output with Thai labels for each position"""
+        base1_dict = {label: value for label, value in zip(self.day_labels, base1)}
+        base2_dict = {label: value for label, value in zip(self.month_labels, base2)}
+        base3_dict = {label: value for label, value in zip(self.year_labels, base3)}
+        
+        return base1_dict, base2_dict, base3_dict, base4
+    
+    def validate_inputs(self, birth_date: datetime, thai_day: str) -> None:
+        """Validate input parameters"""
+        # Check if birth_date is valid
+        if not birth_date:
+            raise CalculationError("Birth date is required")
+            
+        # Check if thai_day is valid
+        if not thai_day or thai_day not in self.day_values:
+            valid_days = ", ".join(self.day_values.keys())
+            raise CalculationError(f"Invalid Thai day: '{thai_day}'. Valid values are: {valid_days}")
+            
+        # Check if month is valid
+        month = birth_date.month
+        if month < 1 or month > 12:
+            raise CalculationError(f"Invalid month: {month}. Month must be between 1 and 12.")
     
     def calculate_birth_bases(self, birth_date: datetime, thai_day: str) -> BasesResult:
         """Calculate all bases for birth date and Thai day"""
         try:
-            # Calculate Base 1
+            self.logger.info(f"Calculating birth bases for: {birth_date.strftime('%Y-%m-%d')}, {thai_day}")
+            
+            # Validate inputs
+            self.validate_inputs(birth_date, thai_day)
+            
+            # Calculate Base 1 (Day of the week)
             base1 = self.calculate_base1(thai_day)
             
-            # Calculate Base 2
+            # Calculate Base 2 (Month)
             base2 = self.calculate_base2(birth_date.month)
             
-            # Calculate Base 3
+            # Calculate Base 3 (Thai zodiac year)
             base3, zodiac_animal = self.calculate_base3(birth_date.year)
             
-            # Calculate Base 4
+            # Calculate Base 4 (Sum of bases 1-3)
             base4 = self.calculate_base4(base1, base2, base3)
+            
+            # Format output with Thai labels
+            base1_dict, base2_dict, base3_dict, base4_list = self.format_output(base1, base2, base3, base4)
+            
+            # For debugging
+            self.logger.debug(f"ฐาน 1: {base1_dict}")
+            self.logger.debug(f"ฐาน 2: {base2_dict}")
+            self.logger.debug(f"ฐาน 3: {base3_dict}")
+            self.logger.debug(f"ฐาน 4: {base4_list}")
             
             # Create BirthInfo
             birth_info = BirthInfo(
                 date=birth_date,
                 day=thai_day,
-                day_value=self.day_values[thai_day]["value"],
+                day_value=self.day_values[thai_day],
                 month=birth_date.month,
                 year_animal=zodiac_animal,
-                year_start_number=self.zodiac_years[zodiac_animal]
+                year_start_number=self.get_thai_zodiac_year_index(birth_date.year)
             )
             
             # Create Bases
@@ -168,10 +223,15 @@ class CalculatorService:
             )
             
             # Return combined result
+            self.logger.info(f"Successfully calculated bases for {birth_date.strftime('%Y-%m-%d')}")
             return BasesResult(
                 birth_info=birth_info,
                 bases=bases
             )
             
+        except CalculationError as ce:
+            self.logger.error(f"Calculation error: {str(ce)}")
+            raise
         except Exception as e:
+            self.logger.error(f"Unexpected error calculating birth bases: {str(e)}", exc_info=True)
             raise CalculationError(f"Error calculating birth bases: {str(e)}")

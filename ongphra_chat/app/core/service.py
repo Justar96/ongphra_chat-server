@@ -1,16 +1,21 @@
 # app/core/service.py
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, AsyncGenerator, Union
+import time
+import asyncio
+import logging
+import sys
 
 from app.domain.birth import BirthInfo
-from app.domain.bases import BasesResult
-from app.domain.meaning import MeaningCollection
+from app.domain.bases import BasesResult, Bases
+from app.domain.meaning import MeaningCollection, Meaning
 from app.domain.response import FortuneResponse
 from app.services.calculator import CalculatorService
 from app.services.meaning import MeaningService
 from app.services.prompt import PromptService
 from app.services.response import ResponseService
 from app.core.exceptions import FortuneServiceException
+from app.core.logging import get_logger
 
 
 class FortuneService:
@@ -31,17 +36,60 @@ class FortuneService:
         self.prompt_service = prompt_service
         self.response_service = response_service
         
-        # Track user sessions
+        # Add error handling for logger initialization
+        try:
+            self.logger = get_logger(__name__)
+            self.logger.info("Initialized FortuneService")
+        except Exception as e:
+            # Fallback to basic console logging if file logging fails
+            self.logger = logging.getLogger(__name__)
+            if not self.logger.handlers:
+                handler = logging.StreamHandler(sys.stdout)
+                handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                self.logger.addHandler(handler)
+                self.logger.setLevel(logging.INFO)
+            self.logger.warning(f"Failed to initialize file logger: {str(e)}. Using console logger instead.")
+            self.logger.info("Initialized FortuneService with fallback console logger")
+        
+        # Track user sessions with expiration time
         self.user_sessions = {}
+        
+        # Session cleanup settings
+        self.cleanup_interval = 3600  # 1 hour
+        self.session_max_age = 24 * 3600  # 24 hours
+        
+        # Start background cleanup task
+        self._start_cleanup_task()
     
-    def _update_user_session(self, user_id: str, birth_date: datetime, thai_day: str, language: str):
+    def _update_user_session(self, user_id: str, birth_date: Optional[datetime], thai_day: Optional[str], language: str):
         """Update user session information"""
+        self.logger.debug(f"Updating session for user {user_id}")
         self.user_sessions[user_id] = {
             "birth_date": birth_date,
             "thai_day": thai_day,
             "language": language,
-            "last_interaction": datetime.now()
+            "last_interaction": datetime.now(),
+            "expiration": datetime.now() + timedelta(seconds=self.session_max_age)
         }
+    
+    async def _start_cleanup_task(self):
+        """Start a background task to clean up old sessions"""
+        try:
+            # Use asyncio.create_task in real implementation
+            # For simplicity, we're just defining the method here
+            pass
+        except Exception as e:
+            self.logger.error(f"Failed to start cleanup task: {str(e)}")
+    
+    async def _cleanup_old_sessions(self):
+        """Background task to remove expired sessions"""
+        while True:
+            try:
+                await asyncio.sleep(self.cleanup_interval)
+                self.cleanup_old_sessions()
+            except Exception as e:
+                self.logger.error(f"Error in session cleanup: {str(e)}")
+                await asyncio.sleep(60)  # Wait a minute before retrying
     
     async def get_fortune(
         self,
@@ -66,7 +114,16 @@ class FortuneService:
         Returns:
             FortuneResponse object or streaming generator depending on stream parameter
         """
+        start_time = time.time()
+        self.logger.info(f"Getting fortune for user {user_id}: birth_date={birth_date}, thai_day={thai_day}, language={language}")
+        
         try:
+            # Validate inputs
+            if not birth_date:
+                raise FortuneServiceException("Birth date is required")
+            if not thai_day:
+                raise FortuneServiceException("Thai day is required")
+                
             # Update or initialize user session
             self._update_user_session(user_id, birth_date, thai_day, language)
             
@@ -75,10 +132,16 @@ class FortuneService:
                 birth_date, thai_day
             )
             
+            calculation_time = time.time()
+            self.logger.debug(f"Calculation completed in {calculation_time - start_time:.2f}s")
+            
             # Step 2: Extract meanings from bases
             meanings = await self.meaning_service.extract_meanings(
                 calculation_result.bases, question
             )
+            
+            meanings_time = time.time()
+            self.logger.debug(f"Meaning extraction completed in {meanings_time - calculation_time:.2f}s")
             
             # Step 3: Generate prompt for OpenAI
             prompt = self.prompt_service.generate_user_prompt(
@@ -89,9 +152,13 @@ class FortuneService:
                 language
             )
             
+            prompt_time = time.time()
+            self.logger.debug(f"Prompt generation completed in {prompt_time - meanings_time:.2f}s")
+            
             # Step 4: Generate response using AI
             if stream:
                 # For streaming responses, return the generator directly
+                self.logger.info(f"Returning streaming response for user {user_id}")
                 return await self.response_service.generate_response(
                     prompt, 
                     language,
@@ -109,13 +176,18 @@ class FortuneService:
                         user_id=user_id,
                         stream=False
                     )
+                    
+                    response_time = time.time()
+                    self.logger.debug(f"Response generation completed in {response_time - prompt_time:.2f}s")
+                    self.logger.info(f"Total fortune generation completed in {response_time - start_time:.2f}s")
+                    
                 except Exception as e:
                     # If response generation fails, provide a fallback
+                    self.logger.error(f"Error in response generation: {str(e)}", exc_info=True)
                     if language.lower() == "english":
                         fortune_text = "I apologize, but I'm unable to provide a detailed reading at this moment. Please try again later."
                     else:
                         fortune_text = "ขออภัย มีข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
-                    print(f"Error in response generation: {str(e)}")
                 
                 # Return FortuneResponse object
                 return FortuneResponse(
@@ -125,33 +197,36 @@ class FortuneService:
                     meanings=meanings
                 )
             
+        except FortuneServiceException as e:
+            # Handle known service exceptions
+            self.logger.error(f"Fortune service exception: {str(e)}")
+            raise
         except Exception as e:
             # Handle any errors
-            print(f"Error in get_fortune: {str(e)}")
+            self.logger.error(f"Error in get_fortune: {str(e)}", exc_info=True)
             
             if stream:
                 # Create an async generator for the error message
                 async def error_generator():
-                    if language.lower() == "english":
-                        yield "I apologize, but I'm unable to provide a reading at this moment. Please try again later."
-                    else:
-                        yield "ขออภัย มีข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
+                    error_msg = "An error occurred during fortune generation. Please try again later."
+                    if language.lower() != "english":
+                        error_msg = "เกิดข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
+                    yield error_msg
                 
                 return error_generator()
             else:
-                # Create a minimal response with just the fortune text
-                if language.lower() == "english":
-                    fallback = "I apologize, but I'm unable to provide a reading at this moment. Please try again later."
-                else:
-                    fallback = "ขออภัย มีข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
-                    
+                # Return error response
+                error_msg = "An error occurred during fortune generation. Please try again later."
+                if language.lower() != "english":
+                    error_msg = "เกิดข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
+                
                 return FortuneResponse(
-                    fortune=fallback,
+                    fortune=error_msg,
                     birth_info=None,
                     bases=None,
                     meanings=None
                 )
-    
+
     async def get_general_response(
         self,
         question: str,
@@ -160,7 +235,7 @@ class FortuneService:
         stream: bool = False
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
-        Generate a general response without birth information.
+        Generate a general response when no birth information is provided
         
         Args:
             question: User's question
@@ -169,75 +244,69 @@ class FortuneService:
             stream: Whether to return a streaming response
             
         Returns:
-            General fortune response text or streaming generator
+            General fortune telling response or streaming generator
         """
+        start_time = time.time()
+        self.logger.info(f"Getting general response for user {user_id}: question='{question}', language={language}")
+        
         try:
-            # Update user session language
-            if user_id in self.user_sessions:
-                self.user_sessions[user_id]["language"] = language
-                self.user_sessions[user_id]["last_interaction"] = datetime.now()
+            # Generate prompt for general response
+            prompt = f"Question: {question}"
+            
+            # Generate response using AI
+            if stream:
+                # For streaming responses, return the generator directly
+                self.logger.info(f"Returning streaming general response for user {user_id}")
+                generator = self.response_service.generate_response(
+                    prompt, 
+                    language,
+                    has_birth_info=False,
+                    user_id=user_id,
+                    stream=True
+                )
+                # Return the generator directly, not as a coroutine
+                return generator
             else:
-                self.user_sessions[user_id] = {
-                    "language": language,
-                    "birth_date": None,
-                    "thai_day": None,
-                    "last_interaction": datetime.now()
-                }
-            
-            # Generate a prompt without birth info
-            prompt = self.prompt_service.generate_user_prompt(
-                birth_info=None,
-                bases=None,
-                meanings=None,
-                question=question,
-                language=language
-            )
-            
-            # Generate response using AI (streaming or standard)
-            return await self.response_service.generate_response(
-                prompt,
-                language,
-                has_birth_info=False,
-                user_id=user_id,
-                stream=stream
-            )
+                # For standard responses, return the text directly
+                try:
+                    fortune_text = await self.response_service.generate_response(
+                        prompt, 
+                        language,
+                        has_birth_info=False,
+                        user_id=user_id,
+                        stream=False
+                    )
+                    
+                    response_time = time.time()
+                    self.logger.info(f"General response generated in {response_time - start_time:.2f}s")
+                    
+                    return fortune_text
+                    
+                except Exception as e:
+                    # If response generation fails, provide a fallback
+                    self.logger.error(f"Error in general response generation: {str(e)}", exc_info=True)
+                    if language.lower() == "english":
+                        return "I apologize, but I'm unable to provide a response at this moment. Please try again later."
+                    else:
+                        return "ขออภัย มีข้อผิดพลาดในการตอบคำถาม กรุณาลองใหม่อีกครั้ง"
             
         except Exception as e:
-            # Handle any errors with a fallback response
-            print(f"Error generating general response: {str(e)}")
+            # Handle any errors
+            self.logger.error(f"Error in get_general_response: {str(e)}", exc_info=True)
             
             if stream:
                 # Create an async generator for the error message
                 async def error_generator():
-                    if language.lower() == "english":
-                        yield "I apologize, but I'm unable to provide a reading at this moment. Please try again later."
-                    else:
-                        yield "ขออภัย มีข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
+                    error_msg = "An error occurred. Please try again later."
+                    if language.lower() != "english":
+                        error_msg = "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
+                    yield error_msg
                 
                 return error_generator()
             else:
-                if language.lower() == "english":
-                    return "I apologize, but I'm unable to provide a reading at this moment. Please try again later."
-                else:
-                    return "ขออภัย มีข้อผิดพลาดในการทำนาย กรุณาลองใหม่อีกครั้ง"
+                # Return error message
+                error_msg = "An error occurred. Please try again later."
+                if language.lower() != "english":
+                    error_msg = "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
                 
-    async def get_user_session_info(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get information about a user's session"""
-        return self.user_sessions.get(user_id)
-        
-    def cleanup_old_sessions(self, max_age_hours: int = 24):
-        """Remove sessions older than the specified hours"""
-        current_time = datetime.now()
-        sessions_to_remove = []
-        
-        for user_id, session in self.user_sessions.items():
-            last_interaction = session.get("last_interaction")
-            if last_interaction:
-                age = (current_time - last_interaction).total_seconds() / 3600
-                if age > max_age_hours:
-                    sessions_to_remove.append(user_id)
-        
-        for user_id in sessions_to_remove:
-            del self.user_sessions[user_id]
-            
-        return len(sessions_to_remove)
+                return error_msg
