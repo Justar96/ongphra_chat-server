@@ -1,245 +1,659 @@
-# Ongphra Chat - Thai Fortune Telling API
+# Ongphra Chat API
 
-A FastAPI application for Thai fortune telling based on the "เลข 7 ตัว 9 ฐาน" (7 Numbers 9 Bases) system.
+A FastAPI backend service for fortune telling and chat with context memory.
 
-## System Architecture
+## Overview
 
-The application follows a clean architecture pattern with the following components:
+This API provides endpoints for:
+- Fortune telling based on birth date and Thai day
+- Chat interactions with context memory
+- Streaming chat responses
+- Birth chart analysis
 
-- **API Layer**: FastAPI routes and endpoints
-- **Service Layer**: Business logic and orchestration
-- **Repository Layer**: Data access and persistence
-- **Domain Layer**: Core entities and models
+## API Documentation
 
-## Fortune Telling Logic
+The API documentation is available at:
+- Development: http://localhost:8000/docs
+- Production: http://localhost:8000/docs (or your production host)
 
-### Refined Fortune Telling Flow
+## Requirements
 
-The system follows these steps to generate a fortune reading:
+- Python 3.9+
+- See `requirements.txt` for all dependencies
 
-1. **Input Collection**:
-   - Birth date (YYYY-MM-DD)
-   - Thai day (อาทิตย์, จันทร์, อังคาร, etc.)
-   - Optional question
+## Installation
 
-2. **Base Calculation** (CalculatorService):
-   - Calculates the "7 numbers in 9 bases" using the birth date and Thai day
-   - Generates 4 bases with 7 positions each
-   - Each base and position has specific meanings in Thai astrology
-
-3. **Reading Extraction** (ReadingService):
-   - Uses the calculated bases to query the database for relevant readings
-   - Extracts readings directly based on base numbers and positions
-   - Does NOT query by topic keywords like "การเงิน" (finance)
-   - Instead, uses the base values to find the appropriate ภพ (house/base)
-
-4. **Prompt Generation** (PromptService):
-   - Creates a detailed prompt for the AI model
-   - Includes birth information, calculated bases, and extracted readings
-   - Formats the readings to highlight the most relevant ones based on match scores
-
-5. **Response Generation** (ResponseService):
-   - Uses OpenAI to generate a personalized fortune reading
-   - Incorporates the extracted readings into the response
-   - Focuses on the user's question while using the base readings for context
-
-### Key Concept: Base-Driven Readings
-
-The refined logic focuses on using the calculated bases to drive the readings, rather than keyword matching:
-
-1. The system calculates the 7 numbers in 9 bases based on birth information
-2. Each base (ฐาน) and position has specific meanings in Thai astrology
-3. The system queries the database for readings associated with these specific bases and positions
-4. The AI uses these readings to generate a personalized response
-
-This approach ensures that the fortune telling is truly based on the traditional Thai "เลข 7 ตัว 9 ฐาน" system, rather than simple keyword matching.
-
-### Database Query Flow
-
-The database query flow is a critical part of the fortune telling system. Here's how it works in detail:
-
-#### 1. Mapping Bases to House Numbers
-
-In Thai astrology, each base (ฐาน) corresponds to a specific aspect of life:
-
-- **Base 1 (ฐานที่ 1)**: Derived from the day of birth, maps to house numbers 1-4
-  - House 1: ตนุ (Body/Self)
-  - House 2: ธนัง (Wealth/Possessions)
-  - House 3: สหัชชะ (Siblings/Communication)
-  - House 4: พันธุ (Family/Home)
-
-- **Base 2 (ฐานที่ 2)**: Derived from the month, maps to house numbers 5-7
-  - House 5: ปุตตะ (Children/Creativity)
-  - House 6: ริปุ (Enemies/Health challenges)
-  - House 7: ปัตนิ (Spouse/Partnerships)
-
-- **Base 3 (ฐานที่ 3)**: Derived from the year, maps to house numbers 8-10
-  - House 8: มรณะ (Death/Transformation)
-  - House 9: กดุมภะ (Fortune/Higher learning)
-  - House 10: กัมมะ (Career/Public status)
-
-- **Base 4 (ฐานที่ 4)**: Sum of bases 1-3, maps to house numbers 11-12
-  - House 11: ลาภะ (Gains/Social networks)
-  - House 12: วินาสนะ (Loss/Spirituality)
-
-#### 2. Database Schema Design
-
-The database schema is designed to support this mapping:
-
-- **categories table**: Contains the houses (ภพ) with their house_number (1-12)
-- **category_combinations table**: Represents relationships between two houses
-- **readings table**: Contains fortune readings for specific house combinations
-
-#### 3. Query Process
-
-When a user provides their birth date and Thai day:
-
-1. The `CalculatorService` calculates the 4 bases with 7 positions each
-2. For each base (1-4) and position (1-7), the `ReadingService` calls:
-   ```python
-   readings = await self.reading_repository.get_by_base_and_position(base_num, position_num)
+1. Clone the repository
+2. Create a virtual environment:
+   ```
+   python -m venv .venv
+   ```
+3. Activate the virtual environment:
+   - Windows: `.venv\Scripts\activate`
+   - macOS/Linux: `source .venv/bin/activate`
+4. Install dependencies:
+   ```
+   pip install -r requirements.txt
    ```
 
-3. The `ReadingRepository` executes this SQL query:
-   ```sql
-   SELECT r.*, cc.file_name 
-   FROM readings r
-   JOIN category_combinations cc ON r.combination_id = cc.id
-   JOIN categories c1 ON cc.category1_id = c1.id
-   JOIN categories c2 ON cc.category2_id = c2.id
-   WHERE c1.house_number = %s AND c2.house_number = %s
-   ORDER BY r.id
-   ```
-   
-   Where:
-   - The first parameter is the base number (1-4)
-   - The second parameter is the position number (1-7)
+## Running the API
 
-4. This query finds readings where:
-   - The first category's house_number matches the base number
-   - The second category's house_number matches the position number
+### Development Mode
 
-5. The readings are then processed, scored, and used to generate the AI prompt
+```
+python start_dev_server.py
+```
 
-#### 4. Example Query Flow
+Or use the batch file:
+```
+start_dev_server.bat
+```
 
-For a user born on February 14, 1996 (Wednesday/พุธ):
+### Production Mode
 
-1. Calculate Base 1: [4, 5, 6, 7, 1, 2, 3] (from Wednesday)
-2. Calculate Base 2: [2, 3, 4, 5, 6, 7, 1] (from February)
-3. Calculate Base 3: [3, 4, 5, 6, 7, 1, 2] (from 1996)
-4. Calculate Base 4: [9, 12, 15, 18, 14, 10, 6] (sum of bases 1-3)
+```
+python start_server.py
+```
 
-5. For Base 1, Position 2 (value 5):
-   - Query: `WHERE c1.house_number = 1 AND c2.house_number = 2`
-   - This finds readings related to ตนุ (Body/Self) and ธนัง (Wealth)
+Or use the batch file:
+```
+start_server.bat
+```
 
-6. For Base 2, Position 3 (value 4):
-   - Query: `WHERE c1.house_number = 2 AND c2.house_number = 3`
-   - This finds readings related to ธนัง (Wealth) and สหัชชะ (Siblings)
+## Environment Variables
 
-7. And so on for all base-position combinations
+The following environment variables can be configured in a `.env` file:
 
-This approach ensures that the fortune reading is based on the traditional Thai astrological system, using the calculated bases to find relevant readings in the database.
+- `HOST`: Host to bind the server to (default: "0.0.0.0")
+- `PORT`: Port to run the server on (default: 8000)
+- `LOG_LEVEL`: Logging level (default: "DEBUG" for development, "INFO" for production)
+- `DEBUG`: Enable debug mode (default: "true" for development, "false" for production)
+
+## Frontend Integration
+
+This API is designed to work with any frontend application. Follow these instructions to integrate your frontend with the Ongphra Chat API.
+
+### API Base URL
+
+- Development: `http://localhost:8000`
+- Production: Your production server URL
+
+### CORS Configuration
+
+The API is configured to accept requests from all origins (`*`) by default. If you need to restrict this to specific domains, modify the `CORS_ORIGINS` environment variable in the `.env` file.
+
+### Authentication and Session Management
+
+The API uses a user_id parameter for session tracking. Here's how to properly implement session management:
+
+```javascript
+// Session management utilities
+const OngphraSession = {
+  // Key for localStorage
+  USER_ID_KEY: 'ongphra_user_id',
+  
+  // Get existing user ID or create a new one
+  getUserId: function() {
+    let userId = localStorage.getItem(this.USER_ID_KEY);
+    
+    if (!userId) {
+      // Generate UUID v4
+      userId = crypto.randomUUID ? crypto.randomUUID() : 
+               ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+                 (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+               );
+      localStorage.setItem(this.USER_ID_KEY, userId);
+    }
+    
+    return userId;
+  },
+  
+  // Save user birth information
+  saveBirthInfo: function(birthDate, thaiDay) {
+    localStorage.setItem('ongphra_birth_date', birthDate);
+    localStorage.setItem('ongphra_thai_day', thaiDay);
+  },
+  
+  // Get stored birth information
+  getBirthInfo: function() {
+    return {
+      birthDate: localStorage.getItem('ongphra_birth_date'),
+      thaiDay: localStorage.getItem('ongphra_thai_day')
+    };
+  },
+  
+  // Clear user session on server and locally
+  clearSession: async function() {
+    const userId = this.getUserId();
+    
+    if (userId) {
+      try {
+        // Clear on server
+        await fetch(`http://localhost:8000/api/session/${userId}`, {
+          method: 'DELETE',
+        });
+      } catch (error) {
+        console.error('Error clearing server session:', error);
+      }
+      
+      // Clear locally
+      localStorage.removeItem(this.USER_ID_KEY);
+      localStorage.removeItem('ongphra_birth_date');
+      localStorage.removeItem('ongphra_thai_day');
+    }
+  }
+};
+```
+
+### API Client Implementation
+
+Here's a complete API client implementation that handles all endpoints:
+
+```javascript
+class OngphraAPI {
+  constructor(baseUrl = 'http://localhost:8000') {
+    this.baseUrl = baseUrl;
+    this.userId = OngphraSession.getUserId();
+  }
+  
+  // Helper method for API calls
+  async apiCall(endpoint, method = 'GET', body = null) {
+    const url = `${this.baseUrl}${endpoint}`;
+    
+    const options = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    };
+    
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+    
+    try {
+      const response = await fetch(url, options);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Error: ${response.status}`);
+      }
+      
+      return method === 'DELETE' ? { success: true } : await response.json();
+    } catch (error) {
+      console.error(`API Error (${endpoint}):`, error);
+      throw error;
+    }
+  }
+  
+  // Get fortune reading
+  async getFortune(question, language = 'thai') {
+    const birthInfo = OngphraSession.getBirthInfo();
+    
+    if (!birthInfo.birthDate || !birthInfo.thaiDay) {
+      throw new Error('Birth information is required for fortune telling');
+    }
+    
+    return this.apiCall('/api/fortune', 'POST', {
+      birth_date: birthInfo.birthDate,
+      thai_day: birthInfo.thaiDay,
+      question,
+      language,
+      user_id: this.userId
+    });
+  }
+  
+  // Send chat message
+  async sendChatMessage(prompt, language = 'thai') {
+    const birthInfo = OngphraSession.getBirthInfo();
+    
+    // Include birth info if available, but not required
+    const payload = {
+      prompt,
+      language,
+      user_id: this.userId
+    };
+    
+    if (birthInfo.birthDate) payload.birth_date = birthInfo.birthDate;
+    if (birthInfo.thaiDay) payload.thai_day = birthInfo.thaiDay;
+    
+    return this.apiCall('/api/chat', 'POST', payload);
+  }
+  
+  // Get birth chart
+  async getBirthChart(question) {
+    const birthInfo = OngphraSession.getBirthInfo();
+    
+    if (!birthInfo.birthDate || !birthInfo.thaiDay) {
+      throw new Error('Birth information is required for birth chart');
+    }
+    
+    return this.apiCall('/api/birth-chart/enriched', 'POST', {
+      birth_date: birthInfo.birthDate,
+      thai_day: birthInfo.thaiDay,
+      question,
+      user_id: this.userId
+    });
+  }
+  
+  // Get user context
+  async getUserContext() {
+    return this.apiCall(`/api/session/${this.userId}/context`);
+  }
+  
+  // Clear user session
+  async clearSession() {
+    return this.apiCall(`/api/session/${this.userId}`, 'DELETE');
+  }
+  
+  // Stream chat response
+  streamChatResponse(prompt, language = 'thai', callbacks = {}) {
+    const birthInfo = OngphraSession.getBirthInfo();
+    
+    // Include birth info if available, but not required
+    const payload = {
+      prompt,
+      language,
+      user_id: this.userId
+    };
+    
+    if (birthInfo.birthDate) payload.birth_date = birthInfo.birthDate;
+    if (birthInfo.thaiDay) payload.thai_day = birthInfo.thaiDay;
+    
+    // Create URL with searchParams for better compatibility
+    const url = new URL(`${this.baseUrl}/api/chat/stream`);
+    
+    // Set up event source
+    const eventSource = new EventSource(url.toString());
+    
+    // Post the request data
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    }).catch(error => {
+      if (callbacks.onError) callbacks.onError(error);
+      eventSource.close();
+    });
+    
+    // Set up event handlers
+    let fullText = '';
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const chunk = event.data;
+        if (chunk) {
+          fullText += chunk;
+          if (callbacks.onChunk) callbacks.onChunk(chunk, fullText);
+        }
+      } catch (error) {
+        if (callbacks.onError) callbacks.onError(error);
+      }
+    };
+    
+    eventSource.onerror = (error) => {
+      if (callbacks.onError) callbacks.onError(error);
+      eventSource.close();
+    };
+    
+    eventSource.addEventListener('end', () => {
+      if (callbacks.onComplete) callbacks.onComplete(fullText);
+      eventSource.close();
+    });
+    
+    // Return control methods
+    return {
+      cancel: () => {
+        eventSource.close();
+        if (callbacks.onCancel) callbacks.onCancel();
+      }
+    };
+  }
+}
+```
+
+### Usage Examples
+
+#### 1. Initial Setup and User Onboarding
+
+```javascript
+// Initialize the API client
+const api = new OngphraAPI('http://localhost:8000');
+
+// Save user birth information (only needed once)
+function saveBirthInfo() {
+  const birthDate = document.getElementById('birth-date').value;
+  const thaiDay = document.getElementById('thai-day').value;
+  
+  if (!birthDate || !thaiDay) {
+    alert('Please enter both birth date and Thai day');
+    return;
+  }
+  
+  // Save to session manager
+  OngphraSession.saveBirthInfo(birthDate, thaiDay);
+  
+  alert('Birth information saved successfully!');
+}
+```
+
+#### 2. Regular Chat Interaction
+
+```javascript
+// Send a chat message
+async function sendChatMessage() {
+  const messageInput = document.getElementById('message-input');
+  const prompt = messageInput.value.trim();
+  
+  if (!prompt) return;
+  
+  try {
+    // Display user message in UI
+    displayMessage('user', prompt);
+    
+    // Clear input
+    messageInput.value = '';
+    
+    // Send to API
+    const response = await api.sendChatMessage(prompt);
+    
+    // Display response in UI
+    displayMessage('bot', response.text);
+  } catch (error) {
+    console.error('Chat error:', error);
+    displayMessage('error', 'Sorry, there was an error sending your message.');
+  }
+}
+
+// Helper function to display messages in UI
+function displayMessage(type, content) {
+  const chatContainer = document.getElementById('chat-container');
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `message ${type}-message`;
+  messageDiv.textContent = content;
+  chatContainer.appendChild(messageDiv);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+```
+
+#### 3. Streaming Chat Implementation
+
+```javascript
+// Send a streaming chat message
+function sendStreamingChatMessage() {
+  const messageInput = document.getElementById('message-input');
+  const prompt = messageInput.value.trim();
+  
+  if (!prompt) return;
+  
+  // Display user message in UI
+  displayMessage('user', prompt);
+  
+  // Clear input
+  messageInput.value = '';
+  
+  // Create a placeholder for the streaming response
+  const chatContainer = document.getElementById('chat-container');
+  const responsePlaceholder = document.createElement('div');
+  responsePlaceholder.className = 'message bot-message streaming';
+  responsePlaceholder.id = `response-${Date.now()}`;
+  chatContainer.appendChild(responsePlaceholder);
+  
+  // Stream the response
+  const streamController = api.streamChatResponse(prompt, 'thai', {
+    onChunk: (chunk, fullText) => {
+      // Update the placeholder with each chunk
+      responsePlaceholder.textContent = fullText;
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    },
+    onComplete: (fullText) => {
+      // Remove streaming class when complete
+      responsePlaceholder.classList.remove('streaming');
+    },
+    onError: (error) => {
+      console.error('Stream error:', error);
+      responsePlaceholder.classList.remove('streaming');
+      responsePlaceholder.classList.add('error');
+      responsePlaceholder.textContent = 'Sorry, there was an error receiving the response.';
+    }
+  });
+  
+  // Optional: Add a cancel button
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = 'Cancel';
+  cancelButton.onclick = () => {
+    streamController.cancel();
+    responsePlaceholder.classList.remove('streaming');
+    responsePlaceholder.classList.add('cancelled');
+    responsePlaceholder.textContent += ' [cancelled]';
+  };
+  chatContainer.appendChild(cancelButton);
+}
+```
+
+#### 4. Fortune Telling
+
+```javascript
+// Get a fortune reading
+async function getFortune() {
+  const questionInput = document.getElementById('fortune-question');
+  const question = questionInput.value.trim();
+  
+  if (!question) {
+    alert('Please enter a question');
+    return;
+  }
+  
+  try {
+    // Show loading indicator
+    document.getElementById('fortune-result').textContent = 'Loading...';
+    
+    // Get fortune from API
+    const response = await api.getFortune(question);
+    
+    // Display result
+    document.getElementById('fortune-result').textContent = response.reading.meaning;
+  } catch (error) {
+    console.error('Fortune error:', error);
+    document.getElementById('fortune-result').textContent = 
+      'Error: ' + (error.message || 'Could not get fortune reading');
+  }
+}
+```
+
+### Handling Birth Information
+
+Always check if birth information is available before making requests that require it:
+
+```javascript
+// Check if birth info is needed
+function checkBirthInfo() {
+  const birthInfo = OngphraSession.getBirthInfo();
+  
+  if (!birthInfo.birthDate || !birthInfo.thaiDay) {
+    // Show birth info form
+    document.getElementById('birth-info-form').style.display = 'block';
+    return false;
+  }
+  
+  return true;
+}
+
+// Before making a request that requires birth info
+function getPersonalizedFortune() {
+  if (!checkBirthInfo()) {
+    alert('Please enter your birth information first');
+    return;
+  }
+  
+  // Proceed with API call
+  getFortune();
+}
+```
+
+### CSS for Streaming Messages
+
+Add these styles to create a nice streaming effect:
+
+```css
+.message {
+  padding: 10px;
+  margin: 5px 0;
+  border-radius: 8px;
+}
+
+.user-message {
+  background-color: #e1f5fe;
+  align-self: flex-end;
+}
+
+.bot-message {
+  background-color: #f1f1f1;
+  align-self: flex-start;
+}
+
+.bot-message.streaming {
+  position: relative;
+}
+
+.bot-message.streaming:after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #666;
+  border-radius: 50%;
+  margin-left: 5px;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+```
+
+### Error Handling
+
+Add comprehensive error handling to improve user experience:
+
+```javascript
+// Global error handler
+window.addEventListener('unhandledrejection', function(event) {
+  console.error('Unhandled Promise Rejection:', event.reason);
+  
+  // Show user-friendly error message
+  const errorMessage = event.reason.message || 'An unexpected error occurred';
+  alert(`Error: ${errorMessage}`);
+});
+
+// Network status monitoring
+window.addEventListener('online', () => {
+  console.log('Connection restored');
+  document.getElementById('connection-status').textContent = 'Online';
+  document.getElementById('connection-status').className = 'status-online';
+});
+
+window.addEventListener('offline', () => {
+  console.log('Connection lost');
+  document.getElementById('connection-status').textContent = 'Offline';
+  document.getElementById('connection-status').className = 'status-offline';
+});
+```
 
 ## API Endpoints
 
 ### Fortune Telling
 
 ```
-POST /fortune
+POST /api/fortune
 ```
-
 Request body:
 ```json
 {
-  "birth_date": "1990-01-01",
+  "birth_date": "YYYY-MM-DD",
   "thai_day": "อาทิตย์",
-  "question": "ฉันจะประสบความสำเร็จในชีวิตหรือไม่?",
+  "question": "Will I be lucky in love?",
   "language": "thai"
 }
 ```
 
-**Response:**
+### Chat
 
+```
+POST /api/chat
+```
+Request body:
 ```json
 {
-  "birth_date": "1990-01-01",
+  "prompt": "Tell me about my career prospects",
+  "birth_date": "YYYY-MM-DD",
   "thai_day": "อาทิตย์",
-  "question": "ฉันจะประสบความสำเร็จในชีวิตหรือไม่?",
-  "heading": "ร่างกาย (ตนุ) สัมพันธ์กับ ทรัพย์สิน (ธนัง)",
-  "meaning": "การดูแลสุขภาพจะส่งผลดีต่อการเงิน ควรลงทุนในสุขภาพเพื่อลดค่าใช้จ่ายในอนาคต",
-  "influence_type": "ดี"
+  "language": "thai",
+  "user_id": "optional-user-id"
 }
 ```
 
-### Web Form Submission
+### Streaming Chat
 
 ```
-POST /fortune-web
+POST /api/chat/stream
+```
+Request body:
+```json
+{
+  "prompt": "Tell me about my career prospects",
+  "birth_date": "YYYY-MM-DD",
+  "thai_day": "อาทิตย์",
+  "language": "thai",
+  "user_id": "optional-user-id"
+}
 ```
 
-Form data:
-- birth_date: "1990-01-01"
-- thai_day: "อาทิตย์"
-- question: "ฉันจะประสบความสำเร็จในชีวิตหรือไม่?"
-
-### Export PDF
+### Session Management
 
 ```
-GET /export-pdf?birth_date=1990-01-01&thai_day=อาทิตย์&question=ฉันจะประสบความสำเร็จในชีวิตหรือไม่?
+DELETE /api/session/{user_id}
 ```
 
-Returns a PDF file with the fortune reading.
-
-## Database Schema
-
-### Tables
-
-- **categories**
-  - id: Primary key
-  - name: Category name (e.g., กดุมภะ)
-  - thai_meaning: Thai meaning (e.g., รายได้รายจ่าย)
-  - house_number: House number in Thai astrology (1-12)
-  - house_type: Type of house influence (กาลปักษ์, เกณฑ์ชะตา, จร)
-
-- **category_combinations**
-  - id: Primary key
-  - file_name: Original JSON filename without extension
-  - category1_id: Foreign key to categories
-  - category2_id: Foreign key to categories
-  - category3_id: Foreign key to categories (nullable)
-
-- **readings**
-  - id: Primary key
-  - combination_id: Foreign key to category_combinations
-  - heading: Reading heading (e.g., "ร่างกาย (ตนุ) สัมพันธ์กับ ทรัพย์สิน (ธนัง)")
-  - meaning: Reading content
-  - influence_type: Type of influence (ดี, ไม่ดี, ปานกลาง)
-
-## Installation
-
-1. Clone the repository
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate the virtual environment:
-   - Windows: `.venv\Scripts\activate`
-   - Linux/Mac: `source .venv/bin/activate`
-4. Install dependencies: `pip install -r requirements.txt`
-5. Set up environment variables (see `.env.example`)
-6. Run the application: `uvicorn app.main:app --reload`
-
-## Development
-
-### Running Tests
-
 ```
-pytest
+GET /api/session/{user_id}/context
 ```
 
-### Code Style
+### Birth Chart
 
-The project follows PEP 8 guidelines with a maximum line length of 100 characters.
+```
+POST /api/birth-chart/enriched
+```
+Request body:
+```json
+{
+  "birth_date": "YYYY-MM-DD",
+  "thai_day": "อาทิตย์",
+  "question": "What does my birth chart say about my future?",
+  "user_id": "optional-user-id"
+}
+```
 
-## License
+## Error Handling
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+The API returns standard HTTP status codes and error responses:
+- 200: Success
+- 400: Bad Request (invalid parameters)
+- 404: Not Found
+- 500: Internal Server Error
+
+Error response format:
+```json
+{
+  "detail": "Error message"
+}
+```
+
+## Logging
+
+Logs are stored in the `logs` directory:
+- `app.log`: General application logs
+- `csv_operations.log`: CSV-specific operations

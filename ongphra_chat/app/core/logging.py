@@ -78,16 +78,27 @@ def setup_logging():
         for handler in root_logger.handlers:
             root_logger.removeHandler(handler)
     
-    # Console handler
+    # Console handler with UTF-8 encoding
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    # Force UTF-8 encoding for console output
+    try:
+        # This might not work on all platforms, so we wrap it in a try-except
+        import codecs
+        sys.stdout.reconfigure(encoding='utf-8')
+    except (AttributeError, ImportError):
+        # For older Python versions or platforms that don't support reconfigure
+        if hasattr(sys.stdout, 'encoding'):
+            sys.stdout.encoding = 'utf-8'
+    
     root_logger.addHandler(console_handler)
     
-    # File handler with rotation
-    file_handler = RotatingFileHandler(
+    # File handler with rotation and UTF-8 encoding
+    file_handler = SafeRotatingFileHandler(
         os.path.join(LOG_DIR, LOG_FILE),
         maxBytes=MAX_LOG_SIZE,
-        backupCount=BACKUP_COUNT
+        backupCount=BACKUP_COUNT,
+        encoding='utf-8'  # Use UTF-8 encoding for log files
     )
     file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
     root_logger.addHandler(file_handler)

@@ -40,7 +40,8 @@ def start_server():
         host = os.environ.get("HOST", "0.0.0.0")
         port = int(os.environ.get("PORT", "8000"))
         
-        print(f"Starting server on {host}:{port} in production mode...")
+        print(f"Starting API server on {host}:{port} in production mode...")
+        print(f"API documentation available at http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs")
         
         # Start uvicorn with optimized settings for production
         uvicorn.run(

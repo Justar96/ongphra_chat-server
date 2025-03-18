@@ -119,7 +119,13 @@ class SessionManager:
         session = self.get_session(user_id)
         session["birth_info"] = birth_date.strftime("%Y-%m-%d")
         session["thai_day"] = thai_day
-        self.logger.info(f"Saved birth info for user {user_id}: {birth_date.strftime('%Y-%m-%d')}, {thai_day}")
+        
+        # Handle potential encoding issues with Thai characters in logs
+        try:
+            self.logger.info(f"Saved birth info for user {user_id}: {birth_date.strftime('%Y-%m-%d')}, {thai_day}")
+        except UnicodeEncodeError:
+            # Fallback to ASCII representation if console can't handle Thai characters
+            self.logger.info(f"Saved birth info for user {user_id}: {birth_date.strftime('%Y-%m-%d')}, [Thai day name]")
     
     def get_birth_info(self, user_id: str) -> Optional[Dict[str, str]]:
         """

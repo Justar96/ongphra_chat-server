@@ -1,0 +1,11 @@
+# Basic uvicorn command for development (with auto-reload)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Production uvicorn command (no reload, multiple workers)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# Alternative command using the start_dev_server.py script
+python start_dev_server.py
+
+# Alternative command using the start_server.py script for production
+python start_server.py 

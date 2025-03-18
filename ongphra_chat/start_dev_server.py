@@ -42,6 +42,7 @@ def start_dev_server():
         port = int(os.environ.get("PORT", "8000"))
         
         print(f"Starting development server on {host}:{port}...")
+        print(f"API documentation available at http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs")
         
         # Start uvicorn with development settings
         uvicorn.run(

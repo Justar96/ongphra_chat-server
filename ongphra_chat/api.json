@@ -1,0 +1,604 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+      "title": "Ongphra Chat API",
+      "description": "API for fortune telling and chat with context memory",
+      "version": "1.0.0"
+    },
+    "paths": {
+      "/api/fortune": {
+        "post": {
+          "tags": [
+            "API"
+          ],
+          "summary": "Get Fortune",
+          "description": "Get a fortune reading based on birth date and Thai day",
+          "operationId": "get_fortune_api_fortune_post",
+          "parameters": [
+            {
+              "name": "model_class",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "title": "Model Class"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Body_get_fortune_api_fortune_post"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/chat": {
+        "post": {
+          "tags": [
+            "API"
+          ],
+          "summary": "Get Chat Response",
+          "description": "Get a chat response with context from previous conversations",
+          "operationId": "get_chat_response_api_chat_post",
+          "parameters": [
+            {
+              "name": "model_class",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "title": "Model Class"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Body_get_chat_response_api_chat_post"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/chat/stream": {
+        "post": {
+          "tags": [
+            "API"
+          ],
+          "summary": "Stream Chat Response",
+          "description": "Stream a chat response with context from previous conversations",
+          "operationId": "stream_chat_response_api_chat_stream_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Body_stream_chat_response_api_chat_stream_post"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/session/{user_id}": {
+        "delete": {
+          "tags": [
+            "API"
+          ],
+          "summary": "Clear Session",
+          "description": "Clear user session data",
+          "operationId": "clear_session_api_session__user_id__delete",
+          "parameters": [
+            {
+              "name": "user_id",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "description": "User ID to clear",
+                "title": "User Id"
+              },
+              "description": "User ID to clear"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/session/{user_id}/context": {
+        "get": {
+          "tags": [
+            "API"
+          ],
+          "summary": "Get Session Context",
+          "description": "Get user session context data",
+          "operationId": "get_session_context_api_session__user_id__context_get",
+          "parameters": [
+            {
+              "name": "user_id",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "description": "User ID to get context for",
+                "title": "User Id"
+              },
+              "description": "User ID to get context for"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/birth-chart/enriched": {
+        "post": {
+          "tags": [
+            "API"
+          ],
+          "summary": "Get Enriched Birth Chart",
+          "description": "Get an enriched birth chart with calculator results and category details",
+          "operationId": "get_enriched_birth_chart_api_birth_chart_enriched_post",
+          "parameters": [
+            {
+              "name": "model_class",
+              "in": "query",
+              "required": false,
+              "schema": {
+                "title": "Model Class"
+              }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Body_get_enriched_birth_chart_api_birth_chart_enriched_post"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            },
+            "422": {
+              "description": "Validation Error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/": {
+        "get": {
+          "summary": "Root",
+          "description": "Root endpoint",
+          "operationId": "root__get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/health": {
+        "get": {
+          "summary": "Health Check",
+          "description": "Health check endpoint",
+          "operationId": "health_check_health_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response",
+              "content": {
+                "application/json": {
+                  "schema": {
+  
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "schemas": {
+        "Body_get_chat_response_api_chat_post": {
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "title": "Prompt",
+              "description": "User's prompt or question"
+            },
+            "birth_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Birth Date",
+              "description": "Birth date in YYYY-MM-DD format"
+            },
+            "thai_day": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thai Day",
+              "description": "Thai day of birth (optional, will be determined from birth date if not provided)"
+            },
+            "language": {
+              "type": "string",
+              "title": "Language",
+              "description": "Response language (thai or english)",
+              "default": "thai"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id",
+              "description": "User identifier for session tracking"
+            }
+          },
+          "type": "object",
+          "required": [
+            "prompt"
+          ],
+          "title": "Body_get_chat_response_api_chat_post"
+        },
+        "Body_get_enriched_birth_chart_api_birth_chart_enriched_post": {
+          "properties": {
+            "birth_date": {
+              "type": "string",
+              "title": "Birth Date",
+              "description": "Birth date in YYYY-MM-DD format"
+            },
+            "thai_day": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thai Day",
+              "description": "Thai day of birth (e.g., อาทิตย์, จันทร์). If not provided, will be determined from the birth date."
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Question",
+              "description": "User's question for focused readings"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id",
+              "description": "User identifier for session tracking"
+            }
+          },
+          "type": "object",
+          "required": [
+            "birth_date"
+          ],
+          "title": "Body_get_enriched_birth_chart_api_birth_chart_enriched_post"
+        },
+        "Body_get_fortune_api_fortune_post": {
+          "properties": {
+            "birth_date": {
+              "type": "string",
+              "title": "Birth Date",
+              "description": "Birth date in YYYY-MM-DD format"
+            },
+            "thai_day": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thai Day",
+              "description": "Thai day of birth (e.g., อาทิตย์, จันทร์). If not provided, will be determined from the birth date."
+            },
+            "question": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Question",
+              "description": "User's question about their fortune"
+            },
+            "language": {
+              "type": "string",
+              "title": "Language",
+              "description": "Response language (thai or english)",
+              "default": "thai"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id",
+              "description": "User identifier for session tracking"
+            }
+          },
+          "type": "object",
+          "required": [
+            "birth_date"
+          ],
+          "title": "Body_get_fortune_api_fortune_post"
+        },
+        "Body_stream_chat_response_api_chat_stream_post": {
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "title": "Prompt",
+              "description": "User's prompt or question"
+            },
+            "birth_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Birth Date",
+              "description": "Birth date in YYYY-MM-DD format"
+            },
+            "thai_day": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thai Day",
+              "description": "Thai day of birth (optional, will be determined from birth date if not provided)"
+            },
+            "language": {
+              "type": "string",
+              "title": "Language",
+              "description": "Response language (thai or english)",
+              "default": "thai"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id",
+              "description": "User identifier for session tracking"
+            }
+          },
+          "type": "object",
+          "required": [
+            "prompt"
+          ],
+          "title": "Body_stream_chat_response_api_chat_stream_post"
+        },
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "type": "array",
+              "title": "Detail"
+            }
+          },
+          "type": "object",
+          "title": "HTTPValidationError"
+        },
+        "ValidationError": {
+          "properties": {
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "type": "array",
+              "title": "Location"
+            },
+            "msg": {
+              "type": "string",
+              "title": "Message"
+            },
+            "type": {
+              "type": "string",
+              "title": "Error Type"
+            }
+          },
+          "type": "object",
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError"
+        }
+      }
+    }
+  }

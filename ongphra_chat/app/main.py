@@ -2,10 +2,9 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from fastapi import FastAPI, Request, Response, Form, Depends, Query, APIRouter
+from fastapi import FastAPI, Request, Response, Depends, Query, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 import time
 import uvicorn
 from datetime import datetime
@@ -30,10 +29,6 @@ settings = get_settings()
 # Ensure logs directory exists
 logs_dir = os.path.join(settings.base_dir, "logs")
 os.makedirs(logs_dir, exist_ok=True)
-
-# Ensure static directory exists
-static_dir = os.path.join(settings.base_dir, "static")
-os.makedirs(static_dir, exist_ok=True)
 
 # Configure logging
 log_file = os.path.join(logs_dir, "app.log")
@@ -136,9 +131,6 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
-    # Mount static files
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
     
     # Add API router
     app.include_router(api_router)
@@ -248,10 +240,4 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    # Run the application with uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.debug
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8000)
