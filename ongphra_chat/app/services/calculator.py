@@ -41,6 +41,9 @@ class CalculatorService:
             "เสาร์": 7,  # Saturday
         }
         
+        # Create reverse mapping from day index to Thai day name
+        self.day_names = {v: k for k, v in self.day_values.items()}
+        
         # Base labels for formatting output
         self.day_labels = ["อัตตะ", "หินะ", "ธานัง", "ปิตา", "มาตา", "โภคา", "มัชฌิมา"]
         self.month_labels = ["ตะนุ", "กดุมภะ", "สหัชชะ", "พันธุ", "ปุตตะ", "อริ", "ปัตนิ"]
@@ -159,25 +162,30 @@ class CalculatorService:
         
         return base1_dict, base2_dict, base3_dict, base4
     
-    def validate_inputs(self, birth_date: datetime, thai_day: str) -> None:
+    def validate_inputs(self, birth_date: datetime, thai_day: Optional[str] = None) -> None:
         """Validate input parameters"""
-        # Check if birth_date is valid
         if not birth_date:
             raise CalculationError("Birth date is required")
             
-        # Check if thai_day is valid
-        if not thai_day or thai_day not in self.day_values:
-            valid_days = ", ".join(self.day_values.keys())
-            raise CalculationError(f"Invalid Thai day: '{thai_day}'. Valid values are: {valid_days}")
+        if thai_day and thai_day not in self.day_values:
+            raise CalculationError(f"Invalid Thai day: {thai_day}. Valid values are: {', '.join(self.day_values.keys())}")
             
-        # Check if month is valid
+        year = birth_date.year
+        if year < 1900 or year > 2100:
+            raise CalculationError(f"Invalid year: {year}. Year must be between 1900 and 2100.")
+            
         month = birth_date.month
         if month < 1 or month > 12:
             raise CalculationError(f"Invalid month: {month}. Month must be between 1 and 12.")
     
-    def calculate_birth_bases(self, birth_date: datetime, thai_day: str) -> BasesResult:
+    def calculate_birth_bases(self, birth_date: datetime, thai_day: Optional[str] = None) -> BasesResult:
         """Calculate all bases for birth date and Thai day"""
         try:
+            # Determine Thai day if not provided
+            if not thai_day:
+                thai_day = self.get_thai_day_from_date(birth_date)
+                self.logger.info(f"Thai day not provided, determined from date: {thai_day}")
+            
             self.logger.info(f"Calculating birth bases for: {birth_date.strftime('%Y-%m-%d')}, {thai_day}")
             
             # Validate inputs
@@ -235,3 +243,25 @@ class CalculatorService:
         except Exception as e:
             self.logger.error(f"Unexpected error calculating birth bases: {str(e)}", exc_info=True)
             raise CalculationError(f"Error calculating birth bases: {str(e)}")
+
+    def get_thai_day_from_date(self, date: datetime) -> str:
+        """
+        Determine the Thai day name from a datetime object
+        
+        Args:
+            date: The datetime object
+            
+        Returns:
+            The Thai name of the day of week
+        """
+        # Get weekday index (0 = Monday, 6 = Sunday in Python's datetime)
+        weekday = date.weekday()
+        
+        # Convert to Thai day index (1 = Sunday, 2 = Monday, etc.)
+        thai_day_index = weekday + 2 if weekday < 6 else 1
+        
+        # Get Thai day name from index
+        thai_day = self.day_names[thai_day_index]
+        
+        self.logger.debug(f"Determined Thai day '{thai_day}' from date {date.strftime('%Y-%m-%d')}")
+        return thai_day

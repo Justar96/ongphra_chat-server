@@ -20,7 +20,7 @@ response_service = ResponseService()
 @router.post("/fortune")
 async def get_fortune(
     birth_date: str = Body(..., description="Birth date in YYYY-MM-DD format"),
-    thai_day: str = Body(..., description="Thai day of birth (e.g., อาทิตย์, จันทร์)"),
+    thai_day: Optional[str] = Body(None, description="Thai day of birth (e.g., อาทิตย์, จันทร์). If not provided, will be determined from the birth date."),
     question: Optional[str] = Body(None, description="User's question about their fortune"),
     language: str = Body("thai", description="Response language (thai or english)"),
     user_id: Optional[str] = Body(None, description="User identifier for session tracking"),
@@ -62,7 +62,7 @@ async def get_fortune(
 async def get_chat_response(
     prompt: str = Body(..., description="User's prompt or question"),
     birth_date: Optional[str] = Body(None, description="Birth date in YYYY-MM-DD format"),
-    thai_day: Optional[str] = Body(None, description="Thai day of birth"),
+    thai_day: Optional[str] = Body(None, description="Thai day of birth (optional, will be determined from birth date if not provided)"),
     language: str = Body("thai", description="Response language (thai or english)"),
     user_id: Optional[str] = Body(None, description="User identifier for session tracking"),
     reading_service: ReadingService = Depends(get_reading_service)
@@ -150,7 +150,7 @@ async def get_chat_response(
 async def stream_chat_response(
     prompt: str = Body(..., description="User's prompt or question"),
     birth_date: Optional[str] = Body(None, description="Birth date in YYYY-MM-DD format"),
-    thai_day: Optional[str] = Body(None, description="Thai day of birth"),
+    thai_day: Optional[str] = Body(None, description="Thai day of birth (optional, will be determined from birth date if not provided)"),
     language: str = Body("thai", description="Response language (thai or english)"),
     user_id: Optional[str] = Body(None, description="User identifier for session tracking")
 ):
@@ -260,7 +260,7 @@ async def get_session_context(user_id: str = Path(..., description="User ID to g
 @router.post("/birth-chart/enriched")
 async def get_enriched_birth_chart(
     birth_date: str = Body(..., description="Birth date in YYYY-MM-DD format"),
-    thai_day: str = Body(..., description="Thai day of birth (e.g., อาทิตย์, จันทร์)"),
+    thai_day: Optional[str] = Body(None, description="Thai day of birth (e.g., อาทิตย์, จันทร์). If not provided, will be determined from the birth date."),
     question: Optional[str] = Body(None, description="User's question for focused readings"),
     user_id: Optional[str] = Body(None, description="User identifier for session tracking"),
     reading_service: ReadingService = Depends(get_reading_service)

@@ -95,6 +95,7 @@ def setup_logging():
     # Set log levels for specific libraries
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("fastapi").setLevel(logging.WARNING)
+    logging.getLogger("watchfiles").setLevel(logging.ERROR)  # Disable watchfiles debug logs
     
     # Log setup complete
     root_logger.debug("Logging setup complete")

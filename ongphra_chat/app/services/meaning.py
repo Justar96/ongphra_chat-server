@@ -921,20 +921,20 @@ class MeaningService:
             self.logger.error(f"Error extracting meanings from bases: {str(e)}", exc_info=True)
             raise MeaningExtractionError(f"Error extracting meanings from bases: {str(e)}")
 
-    async def get_enriched_birth_chart(self, birth_date: datetime, thai_day: str, question: Optional[str] = None) -> Dict[str, Any]:
+    async def get_enriched_birth_chart(self, birth_date: datetime, thai_day: Optional[str] = None, question: Optional[str] = None) -> Dict[str, Any]:
         """
         Get a complete enriched birth chart with calculator results and category details
         
         Args:
             birth_date: User's birth date
-            thai_day: Thai day of the week
+            thai_day: Thai day of the week (optional, will be determined from birth_date if not provided)
             question: Optional question for focus readings
             
         Returns:
             Dictionary containing the birth info, enriched bases with Thai meanings, and relevant meanings
         """
         try:
-            self.logger.info(f"Generating enriched birth chart for {birth_date}, {thai_day}")
+            self.logger.info(f"Generating enriched birth chart for {birth_date}, thai_day={thai_day}")
             
             # Get calculator service
             from app.services.calculator import CalculatorService
@@ -942,6 +942,11 @@ class MeaningService:
             
             # Calculate bases
             bases_result = calculator.calculate_birth_bases(birth_date, thai_day)
+            
+            # If thai_day wasn't provided, get it from the calculation result
+            if not thai_day:
+                thai_day = bases_result.birth_info.day
+                self.logger.info(f"Thai day not provided, using {thai_day} from calculation")
             
             # Enrich bases with category details
             enriched_bases = await self.enrich_bases_with_categories(bases_result)

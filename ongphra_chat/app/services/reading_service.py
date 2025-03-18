@@ -295,7 +295,7 @@ class ReadingService:
     async def get_fortune_reading(
         self,
         birth_date: datetime,
-        thai_day: str,
+        thai_day: Optional[str] = None,
         question: Optional[str] = None,
         user_id: str = "default_user" 
     ) -> FortuneReading:
@@ -315,12 +315,16 @@ class ReadingService:
             # Get session manager for tracking
             session_manager = get_session_manager()
             
-            # Save birth info in the session
-            session_manager.save_birth_info(user_id, birth_date, thai_day)
-            
             # Step 1: Calculate bases from birth info
             calculator = CalculatorService()
             calculation_result = calculator.calculate_birth_bases(birth_date, thai_day)
+            
+            # If thai_day wasn't provided, get it from the calculation result
+            if not thai_day:
+                thai_day = calculation_result.birth_info.day
+            
+            # Save birth info in the session
+            session_manager.save_birth_info(user_id, birth_date, thai_day)
             
             # Step 2: Extract meanings from the calculation result
             meanings_collection = await self.extract_meanings_from_calculator_result(calculation_result)
