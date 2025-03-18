@@ -5,6 +5,7 @@ import time
 import asyncio
 import logging
 import sys
+import json
 
 from app.domain.birth import BirthInfo
 from app.domain.bases import BasesResult, Bases
@@ -152,6 +153,12 @@ class FortuneService:
                 language
             )
             
+            # Get mapped bases for better understanding
+            mapped_bases = self.get_mapped_bases(calculation_result)
+            
+            # Add mapped bases to the prompt
+            prompt += f"\n\nMapped Bases Information:\n{json.dumps(mapped_bases, ensure_ascii=False, indent=2)}"
+            
             prompt_time = time.time()
             self.logger.debug(f"Prompt generation completed in {prompt_time - meanings_time:.2f}s")
             
@@ -227,6 +234,138 @@ class FortuneService:
                     meanings=None
                 )
 
+    def get_mapped_bases(self, calculation_result: BasesResult) -> Dict[str, Any]:
+        """
+        Map the calculated bases to their Thai names and provide a structured way to query specific pairs
+        
+        Args:
+            calculation_result: The result of calculate_birth_bases
+            
+        Returns:
+            Dictionary with mapped bases and their Thai names
+        """
+        try:
+            # Get the calculator service labels
+            day_labels = self.calculator_service.day_labels
+            month_labels = self.calculator_service.month_labels
+            year_labels = self.calculator_service.year_labels
+            
+            # Get the bases from the calculation result
+            base1 = calculation_result.bases.base1
+            base2 = calculation_result.bases.base2
+            base3 = calculation_result.bases.base3
+            base4 = calculation_result.bases.base4
+            
+            # Map the bases to their Thai names
+            mapped_bases = {
+                "ฐาน1": {
+                    "คำอธิบาย": "ฐานวันเกิด (ดวงดาว)",
+                    "ค่า": base1,
+                    "ภพ": {label: value for label, value in zip(day_labels, base1)}
+                },
+                "ฐาน2": {
+                    "คำอธิบาย": "ฐานเดือนเกิด (ดวงเดือน)",
+                    "ค่า": base2,
+                    "ภพ": {label: value for label, value in zip(month_labels, base2)}
+                },
+                "ฐาน3": {
+                    "คำอธิบาย": "ฐานปีเกิด (ดวงปี)",
+                    "ค่า": base3,
+                    "ภพ": {label: value for label, value in zip(year_labels, base3)}
+                },
+                "ฐาน4": {
+                    "คำอธิบาย": "ฐานรวม (ดวงชีวิต)",
+                    "ค่า": base4,
+                    "ภพ": {
+                        "อัตตะ": base4[0],
+                        "หินะ": base4[1],
+                        "ธานัง": base4[2],
+                        "ปิตา": base4[3],
+                        "มาตา": base4[4],
+                        "โภคา": base4[5],
+                        "มัชฌิมา": base4[6]
+                    }
+                },
+                "ข้อมูลเกิด": {
+                    "วันเกิด": calculation_result.birth_info.day,
+                    "เดือนเกิด": calculation_result.birth_info.month,
+                    "ปีนักษัตร": calculation_result.birth_info.year_animal,
+                    "ค่าวัน": calculation_result.birth_info.day_value,
+                    "ค่าปีเริ่มต้น": calculation_result.birth_info.year_start_number
+                }
+            }
+            
+            # Add house descriptions
+            house_descriptions = {
+                "อัตตะ": "ตัวเอง บุคลิกภาพ ร่างกาย",
+                "หินะ": "ทรัพย์สิน เงินทอง",
+                "ธานัง": "พี่น้อง ญาติพี่น้อง การเดินทาง",
+                "ปิตา": "บิดา บ้าน ที่อยู่อาศัย",
+                "มาตา": "มารดา บุตร ความรัก",
+                "โภคา": "สุขภาพ การงาน ลูกน้อง",
+                "มัชฌิมา": "คู่ครอง หุ้นส่วน"
+            }
+            
+            mapped_bases["คำอธิบายภพ"] = house_descriptions
+            
+            return mapped_bases
+        except Exception as e:
+            self.logger.error(f"Error mapping bases: {str(e)}", exc_info=True)
+            raise FortuneServiceException(f"Error mapping bases: {str(e)}")
+
+    async def query_specific_house_pair(self, calculation_result: BasesResult, base_name: str, house_name: str) -> Dict[str, Any]:
+        """
+        Query a specific house in a specific base
+        
+        Args:
+            calculation_result: The result of calculate_birth_bases
+            base_name: The name of the base (ฐาน1, ฐาน2, ฐาน3, ฐาน4)
+            house_name: The name of the house (อัตตะ, หินะ, ธานัง, etc.)
+            
+        Returns:
+            Dictionary with the house value and related readings
+        """
+        try:
+            # Get the mapped bases
+            mapped_bases = self.get_mapped_bases(calculation_result)
+            
+            # Check if the base name is valid
+            if base_name not in mapped_bases:
+                valid_bases = ", ".join(list(mapped_bases.keys()))
+                raise FortuneServiceException(f"Invalid base name: {base_name}. Valid values are: {valid_bases}")
+            
+            # Check if the house name is valid
+            base_data = mapped_bases[base_name]
+            if "ภพ" not in base_data or house_name not in base_data["ภพ"]:
+                valid_houses = ", ".join(list(base_data["ภพ"].keys())) if "ภพ" in base_data else ""
+                raise FortuneServiceException(f"Invalid house name: {house_name}. Valid values are: {valid_houses}")
+            
+            # Get the house value
+            house_value = base_data["ภพ"][house_name]
+            
+            # Get the base index (1-4)
+            base_index = int(base_name.replace("ฐาน", ""))
+            
+            # Get the house index (1-7)
+            house_index = list(base_data["ภพ"].keys()).index(house_name) + 1
+            
+            # Get readings for this base and house
+            readings = await self.meaning_service.get_meaning_by_base_position(base_index, house_index, calculation_result.bases)
+            
+            # Format the result
+            result = {
+                "base": base_name,
+                "house": house_name,
+                "value": house_value,
+                "description": mapped_bases["คำอธิบายภพ"].get(house_name, ""),
+                "readings": readings.to_dict() if readings else {}
+            }
+            
+            return result
+        except Exception as e:
+            self.logger.error(f"Error querying house pair: {str(e)}", exc_info=True)
+            raise FortuneServiceException(f"Error querying house pair: {str(e)}")
+
     async def get_general_response(
         self,
         question: str,
@@ -257,7 +396,7 @@ class FortuneService:
             if stream:
                 # For streaming responses, return the generator directly
                 self.logger.info(f"Returning streaming general response for user {user_id}")
-                generator = self.response_service.generate_response(
+                generator = await self.response_service.generate_response(
                     prompt, 
                     language,
                     has_birth_info=False,

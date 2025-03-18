@@ -120,87 +120,124 @@ class PromptService:
         language: str = "thai"
     ) -> str:
         """
-        Generate a user prompt for the AI based on birth info, bases, meanings, and question
+        Generate a user prompt for fortune telling based on birth information and question
         
         Args:
             birth_info: User's birth information
             bases: Calculated bases
             meanings: Extracted meanings
             question: User's question
-            language: Response language (thai or english)
+            language: Prompt language (thai or english)
             
         Returns:
-            User prompt for the AI
+            Generated prompt for the AI model
         """
-        self.logger.debug(f"Generating user prompt in {language}")
-        
-        # Format birth info
-        birth_info_str = (
-            f"Birth Date: {birth_info.date.strftime('%Y-%m-%d')}\n"
-            f"Thai Day: {birth_info.day}\n"
-            f"Zodiac Animal: {birth_info.year_animal}\n"
-        )
-        
-        # Format bases information with raw numbers for reference
-        bases_str = "Bases (เลข 7 ตัว 9 ฐาน):\n"
-        bases_str += f"Base 1 (ฐานที่ 1): {', '.join(map(str, bases.base1))}\n"
-        bases_str += f"Base 2 (ฐานที่ 2): {', '.join(map(str, bases.base2))}\n"
-        bases_str += f"Base 3 (ฐานที่ 3): {', '.join(map(str, bases.base3))}\n"
-        bases_str += f"Base 4 (ฐานที่ 4): {', '.join(map(str, bases.base4))}\n"
-        
-        # Format meanings from the calculator results
-        meanings_str = "Meanings from Bases (ความหมายจากฐาน):\n"
-        
-        if meanings and meanings.items:
-            # Sort meanings by match score for relevance
-            sorted_meanings = sorted(meanings.items, key=lambda m: getattr(m, 'match_score', 0), reverse=True)
+        try:
+            # Format birth info
+            birth_date_str = birth_info.date.strftime("%Y-%m-%d")
             
-            # Take top 5 most relevant meanings
-            top_meanings = sorted_meanings[:5]
+            # Format bases
+            base1_str = ", ".join([str(n) for n in bases.base1])
+            base2_str = ", ".join([str(n) for n in bases.base2])
+            base3_str = ", ".join([str(n) for n in bases.base3])
+            base4_str = ", ".join([str(n) for n in bases.base4])
             
-            for i, meaning in enumerate(top_meanings, 1):
-                base_name = f"Base {meaning.base} (ฐานที่ {meaning.base})"
-                position_name = f"Position {meaning.position} (ตำแหน่งที่ {meaning.position})"
+            # Format meanings
+            meanings_str = ""
+            if meanings and hasattr(meanings, 'items'):
+                for meaning in meanings.items:
+                    if meaning:
+                        meanings_str += f"- {meaning.description}\n"
+            
+            # Thai day labels
+            day_labels = ["อัตตะ", "หินะ", "ธานัง", "ปิตา", "มาตา", "โภคา", "มัชฌิมา"]
+            month_labels = ["ตะนุ", "กดุมภะ", "สหัชชะ", "พันธุ", "ปุตตะ", "อริ", "ปัตนิ"]
+            year_labels = ["มรณะ", "สุภะ", "กัมมะ", "ลาภะ", "พยายะ", "ทาสา", "ทาสี"]
+            
+            # Create detailed base descriptions with Thai labels
+            base1_detail = " | ".join([f"{label}: {value}" for label, value in zip(day_labels, bases.base1)])
+            base2_detail = " | ".join([f"{label}: {value}" for label, value in zip(month_labels, bases.base2)])
+            base3_detail = " | ".join([f"{label}: {value}" for label, value in zip(year_labels, bases.base3)])
+            base4_detail = " | ".join([f"{label}: {value}" for label, value in zip(day_labels, bases.base4)])
+            
+            # House descriptions
+            house_descriptions = {
+                "อัตตะ": "ตัวเอง บุคลิกภาพ ร่างกาย",
+                "หินะ": "ทรัพย์สิน เงินทอง",
+                "ธานัง": "พี่น้อง ญาติพี่น้อง การเดินทาง",
+                "ปิตา": "บิดา บ้าน ที่อยู่อาศัย",
+                "มาตา": "มารดา บุตร ความรัก",
+                "โภคา": "สุขภาพ การงาน ลูกน้อง",
+                "มัชฌิมา": "คู่ครอง หุ้นส่วน"
+            }
+            
+            # Add house descriptions
+            house_desc_str = "\n".join([f"- {house}: {desc}" for house, desc in house_descriptions.items()])
+            
+            # Generate prompt based on language
+            if language.lower() == "english":
+                prompt = f"""
+                User's Question: {question}
                 
-                meanings_str += f"{i}. {base_name}, {position_name}:\n"
-                meanings_str += f"   Heading: {meaning.heading}\n"
-                meanings_str += f"   Meaning: {meaning.meaning}\n"
-                if meaning.category:
-                    meanings_str += f"   Category: {meaning.category}\n"
-                meanings_str += "\n"
-        else:
-            meanings_str += "No specific meanings found from the bases.\n"
-        
-        # Format question
-        question_str = f"User's Question: {question}"
-        
-        # Combine all parts
-        if language.lower() == "english":
-            prompt = (
-                f"Based on the following Thai astrological information using the 7 Numbers 9 Bases system:\n\n"
-                f"{birth_info_str}\n"
-                f"{bases_str}\n"
-                f"{meanings_str}\n"
-                f"{question_str}\n\n"
-                f"Please provide a fortune telling response in English that addresses "
-                f"the user's question while incorporating the meanings from their birth bases. "
-                f"Focus on practical advice and positive guidance. Use the meanings from the bases "
-                f"to provide specific insights related to the question."
-            )
-        else:
-            prompt = (
-                f"จากข้อมูลโหราศาสตร์ไทยระบบเลข 7 ตัว 9 ฐาน ต่อไปนี้:\n\n"
-                f"วันเกิด: {birth_info.date.strftime('%Y-%m-%d')}\n"
-                f"วันไทย: {birth_info.day}\n"
-                f"ปีนักษัตร: {birth_info.year_animal}\n\n"
-                f"{bases_str}\n"
-                f"{meanings_str}\n"
-                f"คำถาม: {question}\n\n"
-                f"กรุณาให้คำทำนายเป็นภาษาไทยที่ตอบคำถามของผู้ใช้ "
-                f"โดยนำความหมายจากฐานต่างๆ มาประกอบการทำนาย "
-                f"เน้นการให้คำแนะนำที่นำไปปฏิบัติได้จริงและการชี้แนะในเชิงบวก "
-                f"ใช้ความหมายจากฐานเพื่อให้ข้อมูลเชิงลึกที่เกี่ยวข้องกับคำถาม"
-            )
-        
-        self.logger.debug(f"Generated prompt with {len(meanings.items) if meanings else 0} meanings")
-        return prompt
+                Birth Information:
+                - Birth Date: {birth_date_str}
+                - Thai Day: {birth_info.day}
+                - Zodiac Animal: {birth_info.year_animal}
+                
+                Calculated Bases:
+                - Base 1 (Day Base): {base1_str}
+                  Detailed: {base1_detail}
+                - Base 2 (Month Base): {base2_str}
+                  Detailed: {base2_detail}
+                - Base 3 (Year Base): {base3_str}
+                  Detailed: {base3_detail}
+                - Base 4 (Sum Base): {base4_str}
+                  Detailed: {base4_detail}
+                
+                House Descriptions:
+                {house_desc_str}
+                
+                Extracted Meanings:
+                {meanings_str if meanings_str else "No specific meanings extracted."}
+                
+                Please provide a fortune telling reading based on this information, focusing on the user's question.
+                """
+            else:
+                prompt = f"""
+                คำถามของผู้ใช้: {question}
+                
+                ข้อมูลวันเกิด:
+                - วันเกิด: {birth_date_str}
+                - วันไทย: {birth_info.day}
+                - ปีนักษัตร: {birth_info.year_animal}
+                
+                ฐานที่คำนวณได้:
+                - ฐาน 1 (ฐานวันเกิด): {base1_str}
+                  รายละเอียด: {base1_detail}
+                - ฐาน 2 (ฐานเดือนเกิด): {base2_str}
+                  รายละเอียด: {base2_detail}
+                - ฐาน 3 (ฐานปีเกิด): {base3_str}
+                  รายละเอียด: {base3_detail}
+                - ฐาน 4 (ฐานรวม): {base4_str}
+                  รายละเอียด: {base4_detail}
+                
+                คำอธิบายภพ:
+                {house_desc_str}
+                
+                ความหมายที่สกัดได้:
+                {meanings_str if meanings_str else "ไม่พบความหมายเฉพาะ"}
+                
+                กรุณาให้คำทำนายตามข้อมูลนี้ โดยเน้นตอบคำถามของผู้ใช้
+                """
+            
+            self.logger.debug(f"Generated user prompt with {len(prompt)} characters")
+            return prompt
+            
+        except Exception as e:
+            self.logger.error(f"Error generating user prompt: {str(e)}", exc_info=True)
+            
+            # Fallback to simple prompt
+            if language.lower() == "english":
+                return f"User's Question: {question}\n\nPlease provide a fortune telling reading based on Thai astrology."
+            else:
+                return f"คำถามของผู้ใช้: {question}\n\nกรุณาให้คำทำนายตามหลักโหราศาสตร์ไทย"

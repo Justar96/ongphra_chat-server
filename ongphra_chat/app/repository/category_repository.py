@@ -1,9 +1,9 @@
 # app/repository/category_repository.py
 from typing import List, Optional, Dict, Any
 
-from ongphra_chat.app.repository.db_repository import DBRepository
-from ongphra_chat.app.domain.meaning import Category
-from ongphra_chat.app.core.logging import get_logger
+from app.repository.db_repository import DBRepository
+from app.domain.meaning import Category
+from app.core.logging import get_logger
 
 
 class CategoryRepository(DBRepository[Category]):
@@ -111,4 +111,65 @@ class CategoryRepository(DBRepository[Category]):
             return None
         except Exception as e:
             self.logger.error(f"Error retrieving combination for categories {category1_id}, {category2_id}, {category3_id}: {str(e)}", exc_info=True)
+            raise
+    
+    async def get_combination_by_id(self, combination_id: int) -> Optional[Dict[str, Any]]:
+        """Get category combination by ID"""
+        self.logger.debug(f"Getting combination by ID: {combination_id}")
+        try:
+            query = """
+                SELECT * FROM category_combinations 
+                WHERE id = %s
+            """
+            results = await self.execute_raw_query(query, combination_id)
+            
+            if results and len(results) > 0:
+                return results[0]
+            return None
+        except Exception as e:
+            self.logger.error(f"Error retrieving combination by ID {combination_id}: {str(e)}", exc_info=True)
+            raise
+    
+    async def search_by_thai_meaning(self, keyword: str) -> List[Category]:
+        """Search categories by Thai meaning containing the keyword"""
+        self.logger.debug(f"Searching categories with Thai meaning containing: {keyword}")
+        try:
+            # Use LIKE for partial matching
+            query = "SELECT * FROM categories WHERE thai_meaning LIKE %s ORDER BY name"
+            results = await self.execute_raw_query(query, f"%{keyword}%")
+            categories = [self.model_class(**row) for row in results]
+            self.logger.debug(f"Found {len(categories)} categories with Thai meaning containing '{keyword}'")
+            return categories
+        except Exception as e:
+            self.logger.error(f"Error searching categories with Thai meaning containing '{keyword}': {str(e)}", exc_info=True)
+            raise
+    
+    async def get_combinations_by_categories(self, category1_id: int, category2_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all category combinations where both categories are involved in any position
+        
+        Args:
+            category1_id: ID of the first category
+            category2_id: ID of the second category
+            
+        Returns:
+            List of category combinations
+        """
+        self.logger.debug(f"Getting all combinations involving categories: {category1_id}, {category2_id}")
+        try:
+            query = """
+                SELECT * FROM category_combinations 
+                WHERE (category1_id = %s OR category2_id = %s OR category3_id = %s)
+                AND (category1_id = %s OR category2_id = %s OR category3_id = %s)
+            """
+            results = await self.execute_raw_query(
+                query, 
+                category1_id, category1_id, category1_id,
+                category2_id, category2_id, category2_id
+            )
+            
+            self.logger.debug(f"Found {len(results)} combinations involving categories {category1_id} and {category2_id}")
+            return results
+        except Exception as e:
+            self.logger.error(f"Error retrieving combinations involving categories {category1_id} and {category2_id}: {str(e)}", exc_info=True)
             raise

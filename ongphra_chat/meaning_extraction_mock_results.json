@@ -1,0 +1,207 @@
+{
+  "Question 1": {
+    "translation": "When will I have good love?",
+    "topics": [
+      "RELATIONSHIP:FINANCE",
+      "CAREER:HEALTH",
+      "FAMILY:RELATIONSHIP"
+    ],
+    "topic_identification_duration": 8.9e-05,
+    "meanings_count": 15,
+    "meaning_extraction_duration": 0.000514,
+    "cached_retrieval_duration": 0.000154,
+    "top_meanings": [
+      {
+        "base": 1,
+        "position": 1,
+        "value": 3,
+        "heading": "FAMILY related to RELATIONSHIP",
+        "category": "FAMILY-RELATIONSHIP",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your family is influenced by relationship. This indicates that..."
+      },
+      {
+        "base": 2,
+        "position": 2,
+        "value": 4,
+        "heading": "RELATIONSHIP related to FINANCE",
+        "category": "RELATIONSHIP-FINANCE",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your relationship is influenced by finance. This indicates that..."
+      },
+      {
+        "base": 3,
+        "position": 3,
+        "value": 5,
+        "heading": "CAREER related to HEALTH",
+        "category": "CAREER-HEALTH",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your career is influenced by health. This indicates that..."
+      }
+    ]
+  },
+  "Question 2": {
+    "translation": "How will my finances be this year?",
+    "topics": [
+      "FINANCE:CAREER",
+      "RELATIONSHIP:FINANCE",
+      "CAREER:HEALTH"
+    ],
+    "topic_identification_duration": 0.000194,
+    "meanings_count": 15,
+    "meaning_extraction_duration": 0.000332,
+    "cached_retrieval_duration": 0.000108,
+    "top_meanings": [
+      {
+        "base": 1,
+        "position": 1,
+        "value": 3,
+        "heading": "RELATIONSHIP related to FINANCE",
+        "category": "RELATIONSHIP-FINANCE",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your relationship is influenced by finance. This indicates that..."
+      },
+      {
+        "base": 2,
+        "position": 2,
+        "value": 4,
+        "heading": "FINANCE related to CAREER",
+        "category": "FINANCE-CAREER",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your finance is influenced by career. This indicates that..."
+      },
+      {
+        "base": 3,
+        "position": 3,
+        "value": 5,
+        "heading": "CAREER related to HEALTH",
+        "category": "CAREER-HEALTH",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your career is influenced by health. This indicates that..."
+      }
+    ]
+  },
+  "Question 3": {
+    "translation": "Will my career progress?",
+    "topics": [
+      "CAREER:HEALTH",
+      "RELATIONSHIP:FINANCE",
+      "FAMILY:RELATIONSHIP"
+    ],
+    "topic_identification_duration": 0.000139,
+    "meanings_count": 15,
+    "meaning_extraction_duration": 0.00034,
+    "cached_retrieval_duration": 0.000126,
+    "top_meanings": [
+      {
+        "base": 1,
+        "position": 1,
+        "value": 3,
+        "heading": "FAMILY related to RELATIONSHIP",
+        "category": "FAMILY-RELATIONSHIP",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your family is influenced by relationship. This indicates that..."
+      },
+      {
+        "base": 2,
+        "position": 2,
+        "value": 4,
+        "heading": "CAREER related to HEALTH",
+        "category": "CAREER-HEALTH",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your career is influenced by health. This indicates that..."
+      },
+      {
+        "base": 3,
+        "position": 3,
+        "value": 5,
+        "heading": "RELATIONSHIP related to FINANCE",
+        "category": "RELATIONSHIP-FINANCE",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your relationship is influenced by finance. This indicates that..."
+      }
+    ]
+  },
+  "Question 4": {
+    "translation": "How will my health be in the future?",
+    "topics": [
+      "HEALTH:FAMILY",
+      "CAREER:FINANCE",
+      "RELATIONSHIP:FINANCE"
+    ],
+    "topic_identification_duration": 0.000102,
+    "meanings_count": 15,
+    "meaning_extraction_duration": 0.000272,
+    "cached_retrieval_duration": 9.2e-05,
+    "top_meanings": [
+      {
+        "base": 1,
+        "position": 1,
+        "value": 3,
+        "heading": "RELATIONSHIP related to FINANCE",
+        "category": "RELATIONSHIP-FINANCE",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your relationship is influenced by finance. This indicates that..."
+      },
+      {
+        "base": 2,
+        "position": 2,
+        "value": 4,
+        "heading": "HEALTH related to FAMILY",
+        "category": "HEALTH-FAMILY",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your health is influenced by family. This indicates that..."
+      },
+      {
+        "base": 3,
+        "position": 3,
+        "value": 5,
+        "heading": "CAREER related to FINANCE",
+        "category": "CAREER-FINANCE",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your career is influenced by finance. This indicates that..."
+      }
+    ]
+  },
+  "Question 5": {
+    "translation": "How will my child's education be?",
+    "topics": [
+      "RELATIONSHIP:FINANCE",
+      "CAREER:HEALTH",
+      "FAMILY:RELATIONSHIP"
+    ],
+    "topic_identification_duration": 0.000137,
+    "meanings_count": 15,
+    "meaning_extraction_duration": 0.000439,
+    "cached_retrieval_duration": 0.000189,
+    "top_meanings": [
+      {
+        "base": 1,
+        "position": 1,
+        "value": 3,
+        "heading": "FAMILY related to RELATIONSHIP",
+        "category": "FAMILY-RELATIONSHIP",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your family is influenced by relationship. This indicates that..."
+      },
+      {
+        "base": 2,
+        "position": 2,
+        "value": 4,
+        "heading": "RELATIONSHIP related to FINANCE",
+        "category": "RELATIONSHIP-FINANCE",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your relationship is influenced by finance. This indicates that..."
+      },
+      {
+        "base": 3,
+        "position": 3,
+        "value": 5,
+        "heading": "CAREER related to HEALTH",
+        "category": "CAREER-HEALTH",
+        "match_score": 0,
+        "meaning_preview": "Based on your birth chart, your career is influenced by health. This indicates that..."
+      }
+    ]
+  }
+}

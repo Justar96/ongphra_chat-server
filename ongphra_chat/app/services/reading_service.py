@@ -258,6 +258,10 @@ class ReadingService:
         # Sort meanings by match score (if available)
         meanings.sort(key=lambda m: getattr(m, 'match_score', 0), reverse=True)
         
+        # Limit to a reasonable number of meanings
+        if len(meanings) > 20:
+            meanings = meanings[:20]
+        
         self.logger.info(f"Extracted {len(meanings)} meanings from calculator result")
         return MeaningCollection(items=meanings)
     

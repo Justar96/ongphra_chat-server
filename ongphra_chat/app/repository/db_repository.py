@@ -1,9 +1,9 @@
 # app/repository/db_repository.py
 from typing import List, Dict, Any, Optional, TypeVar, Generic, Type
 from pydantic import BaseModel
-from ongphra_chat.app.repository.base import BaseRepository
-from ongphra_chat.app.config.database import DatabaseManager
-from ongphra_chat.app.core.logging import get_logger
+from app.repository.base import BaseRepository
+from app.config.database import DatabaseManager
+from app.core.logging import get_logger
 from app.core.exceptions import RepositoryError
 import logging
 

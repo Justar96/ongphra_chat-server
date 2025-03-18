@@ -10,17 +10,15 @@ import time
 import uvicorn
 from datetime import datetime
 from typing import Optional
-import tempfile
-import importlib.util
 
-from ongphra_chat.app.config.settings import get_settings
-from ongphra_chat.app.config.database import DatabaseManager
-from ongphra_chat.app.repository.category_repository import CategoryRepository
-from ongphra_chat.app.repository.reading_repository import ReadingRepository
-from ongphra_chat.app.services.reading_service import ReadingService, get_reading_service
-from ongphra_chat.app.domain.meaning import Category, Reading
-from ongphra_chat.app.core.logging import setup_logging, get_logger
-from ongphra_chat.app.routers.api_router import router as api_router
+from app.config.settings import get_settings
+from app.config.database import DatabaseManager
+from app.repository.category_repository import CategoryRepository
+from app.repository.reading_repository import ReadingRepository
+from app.services.reading_service import ReadingService, get_reading_service
+from app.domain.meaning import Category, Reading
+from app.core.logging import setup_logging, get_logger
+from app.routers.api_router import router as api_router
 
 # Setup logging
 setup_logging()

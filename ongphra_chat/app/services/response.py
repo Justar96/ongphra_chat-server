@@ -19,9 +19,10 @@ class ResponseService:
         self.logger = get_logger(__name__)
         
         # Initialize settings
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
-        self.default_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-        self.cache_ttl = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour
+        settings = get_settings()
+        self.openai_api_key = settings.openai_api_key
+        self.default_model = settings.default_model
+        self.cache_ttl = settings.cache_ttl
         
         # Initialize OpenAI client
         self.client = AsyncOpenAI(api_key=self.openai_api_key)
@@ -250,7 +251,7 @@ class ResponseService:
                     content = chunk.choices[0].delta.content
                     if content:
                         full_response += content
-                        yield f"data: {content}\n\n"
+                        yield content
             
             # Save the full response to session if user_id is provided
             if user_id and full_response:
@@ -267,11 +268,11 @@ class ResponseService:
                 self.logger.debug(f"Saved assistant streaming response to session for user {user_id}")
             
             # Send the end of stream marker
-            yield "data: [DONE]\n\n"
+            yield "[DONE]"
         except Exception as e:
             self.logger.error(f"Error in streaming response: {str(e)}", exc_info=True)
-            yield f"data: ขออภัย เกิดข้อผิดพลาดในการสตรีมข้อความ: {str(e)}\n\n"
-            yield "data: [DONE]\n\n"
+            yield f"ขออภัย เกิดข้อผิดพลาดในการสตรีมข้อความ: {str(e)}"
+            yield "[DONE]"
     
     def clear_user_conversation(self, user_id: str) -> bool:
         """Clear conversation history for a user"""

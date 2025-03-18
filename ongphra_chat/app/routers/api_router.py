@@ -5,11 +5,11 @@ from typing import Dict, Optional, List, Any
 import uuid
 import json
 
-from ongphra_chat.app.core.logging import get_logger
-from ongphra_chat.app.services.reading_service import ReadingService, get_reading_service
-from ongphra_chat.app.services.response import ResponseService
-from ongphra_chat.app.services.session_service import get_session_manager
-from ongphra_chat.app.domain.meaning import FortuneReading
+from app.core.logging import get_logger
+from app.services.reading_service import ReadingService, get_reading_service
+from app.services.response import ResponseService
+from app.services.session_service import get_session_manager
+from app.domain.meaning import FortuneReading
 
 router = APIRouter(prefix="/api", tags=["API"])
 logger = get_logger(__name__)
@@ -255,4 +255,64 @@ async def get_session_context(user_id: str = Path(..., description="User ID to g
         }
     except Exception as e:
         logger.error(f"Error getting session context: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting session context: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error getting session context: {str(e)}")
+
+@router.post("/birth-chart/enriched")
+async def get_enriched_birth_chart(
+    birth_date: str = Body(..., description="Birth date in YYYY-MM-DD format"),
+    thai_day: str = Body(..., description="Thai day of birth (e.g., อาทิตย์, จันทร์)"),
+    question: Optional[str] = Body(None, description="User's question for focused readings"),
+    user_id: Optional[str] = Body(None, description="User identifier for session tracking"),
+    reading_service: ReadingService = Depends(get_reading_service)
+):
+    """Get an enriched birth chart with calculator results and category details"""
+    logger.info(f"Received enriched birth chart request for birth_date={birth_date}, thai_day={thai_day}")
+    
+    try:
+        # Generate or use provided user_id
+        if not user_id:
+            user_id = str(uuid.uuid4())
+            logger.info(f"Generated new user_id: {user_id}")
+        
+        # Parse birth date
+        try:
+            birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+        
+        # Get session manager for tracking
+        session_manager = get_session_manager()
+        session_manager.save_birth_info(user_id, birth_date_obj, thai_day)
+        
+        # Get meaning service and generate enriched birth chart
+        from app.services.meaning import MeaningService
+        from app.repository.category_repository import CategoryRepository
+        from app.repository.reading_repository import ReadingRepository
+        
+        # Initialize repositories and service
+        category_repository = CategoryRepository()
+        reading_repository = ReadingRepository()
+        meaning_service = MeaningService(
+            category_repository=category_repository,
+            reading_repository=reading_repository
+        )
+        
+        # Generate enriched birth chart
+        result = await meaning_service.get_enriched_birth_chart(
+            birth_date=birth_date_obj,
+            thai_day=thai_day,
+            question=question
+        )
+        
+        # Save birth chart info in session for future reference
+        session_manager.save_context_data(user_id, "enriched_birth_chart", {
+            "birth_date": birth_date,
+            "thai_day": thai_day,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Error generating enriched birth chart: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error generating enriched birth chart: {str(e)}") 

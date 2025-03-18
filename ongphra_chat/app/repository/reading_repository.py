@@ -124,3 +124,37 @@ class ReadingRepository(DBRepository[Reading]):
         except Exception as e:
             self.logger.error(f"Error retrieving readings for influence type {influence_type}: {str(e)}", exc_info=True)
             raise
+    
+    async def get_by_combinations(self, combination_ids: List[int]) -> List[Reading]:
+        """
+        Get readings by a list of combination IDs
+        
+        Args:
+            combination_ids: List of combination IDs to search for
+            
+        Returns:
+            List of readings matching the specified combinations
+        """
+        if not combination_ids:
+            self.logger.warning("No combination IDs provided for reading lookup")
+            return []
+        
+        # Create placeholders for the IN clause
+        placeholders = ", ".join(["%s"] * len(combination_ids))
+        self.logger.debug(f"Getting readings for combination IDs: {combination_ids}")
+        
+        try:
+            query = f"""
+                SELECT r.* 
+                FROM readings r
+                WHERE r.combination_id IN ({placeholders})
+                ORDER BY r.id
+            """
+            
+            results = await self.execute_raw_query(query, *combination_ids)
+            readings = [self.model_class(**row) for row in results]
+            self.logger.debug(f"Found {len(readings)} readings for combination IDs: {combination_ids}")
+            return readings
+        except Exception as e:
+            self.logger.error(f"Error retrieving readings for combination IDs {combination_ids}: {str(e)}", exc_info=True)
+            raise
