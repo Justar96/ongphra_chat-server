@@ -2,7 +2,7 @@
 import aiomysql
 import logging
 from typing import Dict, List, Any, Optional
-from ongphra_chat.app.config.settings import get_settings
+from app.config.settings import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
