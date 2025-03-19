@@ -9,6 +9,7 @@ from app.core.logging import get_logger
 from app.services.reading_service import ReadingService, get_reading_service
 from app.services.response import ResponseService
 from app.services.session_service import get_session_manager
+from app.services.chat_service import ChatService, get_chat_service
 from app.domain.meaning import FortuneReading
 
 router = APIRouter(prefix="/api", tags=["API"])
@@ -41,7 +42,11 @@ async def get_fortune(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
         
-        # Get fortune reading
+        # Get session manager and save birth info to session
+        session_manager = get_session_manager()
+        session_manager.save_birth_info(user_id, birth_date_obj, thai_day)
+        
+        # Use the dedicated fortune reading method directly for better performance and reliability
         reading = await reading_service.get_fortune_reading(
             birth_date=birth_date_obj,
             thai_day=thai_day,
@@ -49,9 +54,15 @@ async def get_fortune(
             user_id=user_id
         )
         
+        # Format the reading appropriately
+        response_text = f"**{reading.heading}**\n\n{reading.meaning}"
+        
         return {
             "success": True,
-            "reading": reading.dict(),
+            "text": response_text,
+            "heading": reading.heading,
+            "meaning": reading.meaning,
+            "birth_date": reading.birth_date,
             "user_id": user_id
         }
     except Exception as e:
@@ -65,7 +76,10 @@ async def get_chat_response(
     thai_day: Optional[str] = Body(None, description="Thai day of birth (optional, will be determined from birth date if not provided)"),
     language: str = Body("thai", description="Response language (thai or english)"),
     user_id: Optional[str] = Body(None, description="User identifier for session tracking"),
-    reading_service: ReadingService = Depends(get_reading_service)
+    session_id: Optional[str] = Body(None, description="Session ID for continuing a conversation"),
+    enable_fortune: bool = Body(True, description="Whether to enable automatic fortune processing"),
+    reading_service: ReadingService = Depends(get_reading_service),
+    chat_service: ChatService = Depends(get_chat_service)
 ):
     """Get a chat response with context from previous conversations"""
     logger.info(f"Received chat request with prompt: {prompt[:50]}...")
@@ -83,16 +97,18 @@ async def get_chat_response(
         has_birth_info = False
         birth_date_obj = None
         
-        if birth_date and thai_day:
+        if birth_date:
             # New birth info provided, save it
             try:
                 birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
                 session_manager.save_birth_info(user_id, birth_date_obj, thai_day)
                 has_birth_info = True
+                logger.info(f"Saved new birth info: {birth_date}, {thai_day}")
             except ValueError:
                 logger.warning(f"Invalid date format: {birth_date}. Using previous birth info if available.")
-        else:
-            # Check for existing birth info in session
+        
+        # Check for existing birth info in session if none provided
+        if not has_birth_info:
             birth_info = session_manager.get_birth_info(user_id)
             if birth_info:
                 try:
@@ -103,45 +119,52 @@ async def get_chat_response(
                 except (ValueError, KeyError):
                     logger.warning("Invalid stored birth info. Treating as no birth info.")
         
-        # Determine if this is a fortune-specific question
-        fortune_keywords = [
-            'ดวง', 'ดูดวง', 'ทำนาย', 'โหราศาสตร์', 'ชะตา', 'ไพ่ยิปซี', 'ราศี', 'ทำนายดวงชะตา',
-            'fortune', 'horoscope', 'predict', 'future', 'astrology', 'tarot'
-        ]
+        # Save user message to database
+        session_id, _ = await chat_service.save_message(
+            user_id=user_id,
+            content=prompt,
+            role="user",
+            session_id=session_id
+        )
         
-        is_fortune_question = any(keyword in prompt.lower() for keyword in fortune_keywords)
+        # Use the enhanced ResponseService with fortune processing if enabled
+        response_text = await response_service.generate_response(
+            prompt=prompt,
+            language=language,
+            has_birth_info=has_birth_info,
+            user_id=user_id,
+            stream=False,
+            process_fortune=enable_fortune
+        )
         
-        if is_fortune_question and has_birth_info and birth_date_obj:
-            # If it's a fortune question and we have birth info, use reading_service
-            reading = await reading_service.get_fortune_reading(
-                birth_date=birth_date_obj,
-                thai_day=thai_day,
-                question=prompt,
-                user_id=user_id
-            )
-            
-            return {
-                "success": True,
-                "text": reading.meaning,
-                "heading": reading.heading,
-                "is_fortune": True,
-                "user_id": user_id
+        # Get last reading from session context to check if we just processed a fortune
+        last_reading = session_manager.get_context_data(user_id, "last_reading")
+        is_fortune = last_reading is not None
+        
+        # Get heading if available
+        heading = last_reading.get("heading", "") if last_reading else ""
+        
+        # Save assistant response to database
+        await chat_service.save_message(
+            user_id=user_id,
+            content=response_text,
+            role="assistant",
+            session_id=session_id,
+            is_fortune=is_fortune,
+            metadata={
+                "heading": heading if is_fortune else None,
+                "language": language
             }
-        else:
-            # Otherwise, use ResponseService for general chat
-            response_text = await response_service.generate_response(
-                prompt=prompt,
-                language=language,
-                has_birth_info=has_birth_info,
-                user_id=user_id
-            )
-            
-            return {
-                "success": True,
-                "text": response_text,
-                "is_fortune": False,
-                "user_id": user_id
-            }
+        )
+        
+        return {
+            "success": True,
+            "text": response_text,
+            "heading": heading,
+            "is_fortune": is_fortune,
+            "user_id": user_id,
+            "session_id": session_id
+        }
     except Exception as e:
         logger.error(f"Error getting chat response: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting chat response: {str(e)}")
@@ -152,7 +175,10 @@ async def stream_chat_response(
     birth_date: Optional[str] = Body(None, description="Birth date in YYYY-MM-DD format"),
     thai_day: Optional[str] = Body(None, description="Thai day of birth (optional, will be determined from birth date if not provided)"),
     language: str = Body("thai", description="Response language (thai or english)"),
-    user_id: Optional[str] = Body(None, description="User identifier for session tracking")
+    user_id: Optional[str] = Body(None, description="User identifier for session tracking"),
+    session_id: Optional[str] = Body(None, description="Session ID for continuing a conversation"),
+    enable_fortune: bool = Body(True, description="Whether to enable automatic fortune processing"),
+    chat_service: ChatService = Depends(get_chat_service)
 ):
     """Stream a chat response with context from previous conversations"""
     logger.info(f"Received streaming chat request with prompt: {prompt[:50]}...")
@@ -168,21 +194,37 @@ async def stream_chat_response(
         
         # Check if we have birth info
         has_birth_info = False
+        birth_date_obj = None
         
-        if birth_date and thai_day:
+        if birth_date:
             # New birth info provided, save it
             try:
                 birth_date_obj = datetime.strptime(birth_date, "%Y-%m-%d")
                 session_manager.save_birth_info(user_id, birth_date_obj, thai_day)
                 has_birth_info = True
+                logger.info(f"Saved new birth info: {birth_date}, {thai_day}")
             except ValueError:
                 logger.warning(f"Invalid date format: {birth_date}. Using previous birth info if available.")
-        else:
-            # Check for existing birth info in session
+        
+        # Check for existing birth info in session if none provided
+        if not has_birth_info:
             birth_info = session_manager.get_birth_info(user_id)
             if birth_info:
-                has_birth_info = True
-                logger.info(f"Using stored birth info for user {user_id}")
+                try:
+                    birth_date_obj = datetime.strptime(birth_info["birth_date"], "%Y-%m-%d")
+                    thai_day = birth_info["thai_day"]
+                    has_birth_info = True
+                    logger.info(f"Using stored birth info: {birth_date_obj.strftime('%Y-%m-%d')}, {thai_day}")
+                except (ValueError, KeyError):
+                    logger.warning("Invalid stored birth info. Treating as no birth info.")
+        
+        # Save user message to database
+        session_id, _ = await chat_service.save_message(
+            user_id=user_id,
+            content=prompt,
+            role="user",
+            session_id=session_id
+        )
                 
         # Use ResponseService for streaming - properly await the coroutine that returns the generator
         streaming_generator = await response_service.generate_response(
@@ -190,12 +232,43 @@ async def stream_chat_response(
             language=language,
             has_birth_info=has_birth_info,
             user_id=user_id,
-            stream=True
+            stream=True,
+            process_fortune=enable_fortune  # Pass the enable_fortune parameter
         )
+        
+        # Create a wrapper generator to save the response and collect the full output
+        async def stream_and_save():
+            full_response = ""
+            is_fortune = False
+            heading = ""
+            
+            async for chunk in streaming_generator:
+                # Collect the full response
+                full_response += chunk
+                yield chunk
+            
+            # After streaming is complete, check if we processed a fortune
+            last_reading = session_manager.get_context_data(user_id, "last_reading")
+            is_fortune = last_reading is not None
+            heading = last_reading.get("heading", "") if last_reading else ""
+            
+            # Save full assistant response to database after streaming is complete
+            await chat_service.save_message(
+                user_id=user_id,
+                content=full_response,
+                role="assistant",
+                session_id=session_id,
+                is_fortune=is_fortune,
+                metadata={
+                    "heading": heading if is_fortune else None,
+                    "language": language,
+                    "streamed": True
+                }
+            )
             
         # Create a streaming response
         return StreamingResponse(
-            streaming_generator,
+            stream_and_save(),
             media_type="text/event-stream"
         )
     except Exception as e:
@@ -203,19 +276,37 @@ async def stream_chat_response(
         raise HTTPException(status_code=500, detail=f"Error getting streaming chat response: {str(e)}")
 
 @router.delete("/session/{user_id}")
-async def clear_session(user_id: str = Path(..., description="User ID to clear")):
+async def clear_session(
+    user_id: str = Path(..., description="User ID to clear"),
+    session_id: Optional[str] = Query(None, description="Specific session ID to clear (if not provided, all sessions will be marked inactive)"),
+    chat_service: ChatService = Depends(get_chat_service)
+):
     """Clear user session data"""
     try:
-        # Clear session
+        # Clear memory session
         session_manager = get_session_manager()
-        success = session_manager.clear_session(user_id)
+        memory_cleared = session_manager.clear_session(user_id)
         
         # Also clear from response service
         response_service.clear_user_conversation(user_id)
         
+        # Handle database session(s)
+        db_cleared = False
+        if session_id:
+            # End specific session
+            db_cleared = await chat_service.end_session(session_id)
+            message = f"Session {session_id} for user {user_id} has been ended"
+        else:
+            # Get active sessions and end them all
+            sessions = await chat_service.get_all_user_sessions(user_id, active_only=True)
+            for session in sessions:
+                await chat_service.end_session(session.id)
+            db_cleared = True
+            message = f"All active sessions for user {user_id} have been ended"
+        
         return {
-            "success": success,
-            "message": f"Session for user {user_id} has been cleared"
+            "success": memory_cleared and db_cleared,
+            "message": message
         }
     except Exception as e:
         logger.error(f"Error clearing session: {str(e)}", exc_info=True)

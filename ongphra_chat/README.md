@@ -9,6 +9,60 @@ This API provides endpoints for:
 - Chat interactions with context memory
 - Streaming chat responses
 - Birth chart analysis
+- **NEW**: Integrated AI fortune reading system
+- **NEW**: Persistent chat history storage
+
+## Features
+
+### Integrated AI Fortune System
+
+The platform now features an AI-powered fortune reading system that:
+- Automatically detects when users ask for fortune readings
+- Extracts birth date information from messages
+- Remembers birth information across conversations
+- Provides contextual fortune readings based on the user's question
+
+For more details, see the [AI Fortune Integration Guide](docs/ai_fortune_integration.md).
+
+### Chat History System
+
+The API now includes a persistent chat history system that:
+- Stores all chat messages in a database for future reference
+- Organizes conversations into sessions for better context management
+- Provides endpoints to retrieve past conversations
+- Tracks fortune readings separately for analysis
+- Supports session management (creating, ending, and deleting sessions)
+
+For more details, see the [Chat History Guide](docs/chat_history.md).
+
+### Endpoint Design
+
+The API is designed with a unified approach to fortune processing:
+
+1. **Chat Endpoints** (`/api/chat` and `/api/chat/stream`)
+   - Handle both regular conversation and fortune readings
+   - Automatically detect fortune requests using keyword analysis
+   - Can extract birth dates directly from user messages
+   - Support the `enable_fortune` parameter to control fortune detection
+   - **New**: Now save all messages to the database for future reference
+
+2. **Fortune Endpoint** (`/api/fortune`)
+   - Dedicated endpoint for direct fortune readings
+   - Requires birth date to be explicitly provided
+   - Uses the same underlying fortune engine as the chat endpoints
+   - Ideal for applications focused specifically on fortune readings
+
+3. **Birth Chart Endpoint** (`/api/birth-chart/enriched`)
+   - Advanced endpoint for detailed astrological information
+   - Returns comprehensive birth chart data with meanings
+
+4. **NEW: Chat History Endpoints** (`/api/chat/...`)
+   - `/api/chat/sessions` - Get a list of user's chat sessions
+   - `/api/chat/history` - Get conversation history for a session
+   - `/api/chat/end-session` - Mark a session as inactive
+   - `/api/chat/session/{session_id}` - Delete a specific session
+
+All endpoints share the same session management system, ensuring user birth information and context are preserved across different API calls and sessions.
 
 ## API Documentation
 
@@ -635,6 +689,42 @@ Request body:
   "question": "What does my birth chart say about my future?",
   "user_id": "optional-user-id"
 }
+```
+
+### NEW: Chat History
+
+```
+GET /api/chat/sessions?user_id={user_id}
+```
+
+```
+GET /api/chat/history?user_id={user_id}&session_id={session_id}
+```
+
+```
+POST /api/chat/end-session
+```
+Request body:
+```json
+{
+  "session_id": "session-uuid"
+}
+```
+
+```
+DELETE /api/chat/session/{session_id}
+```
+
+## Database Migration
+
+To set up the chat history database tables, run the migration script:
+
+```
+# Windows PowerShell
+.\run_migration.ps1
+
+# Linux/Mac
+python -m app.db.migrate
 ```
 
 ## Error Handling

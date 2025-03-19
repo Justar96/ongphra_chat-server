@@ -2,12 +2,28 @@ from typing import Dict, List, Optional, Any
 import time
 from datetime import datetime, timedelta
 import json
+import threading
 
 from app.core.logging import get_logger
 
 
 class SessionManager:
     """Service for managing user session data and conversation history"""
+    
+    # Singleton lock for thread safety
+    _instance_lock = threading.Lock()
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        """
+        Singleton pattern implementation for the SessionManager
+        This ensures only one instance exists across the application
+        """
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = super(SessionManager, cls).__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
     
     def __init__(self, max_sessions: int = 1000, session_ttl: int = 86400):
         """
@@ -17,11 +33,18 @@ class SessionManager:
             max_sessions: Maximum number of sessions to store in memory
             session_ttl: Time to live for sessions in seconds (default 24 hours)
         """
+        # Skip initialization if already done
+        if getattr(self, '_initialized', False):
+            return
+            
         self.logger = get_logger(__name__)
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.max_sessions = max_sessions
         self.session_ttl = session_ttl
         self.logger.info(f"Initialized SessionManager with max_sessions={max_sessions}, ttl={session_ttl}s")
+        
+        # Mark as initialized
+        self._initialized = True
     
     def get_session(self, user_id: str) -> Dict[str, Any]:
         """
@@ -120,12 +143,20 @@ class SessionManager:
         session["birth_info"] = birth_date.strftime("%Y-%m-%d")
         session["thai_day"] = thai_day
         
+        # Ensure thai_day is properly encoded as UTF-8
+        thai_day_encoded = thai_day
+        
         # Handle potential encoding issues with Thai characters in logs
         try:
-            self.logger.info(f"Saved birth info for user {user_id}: {birth_date.strftime('%Y-%m-%d')}, {thai_day}")
+            # Log with UTF-8 encoding
+            birth_date_str = birth_date.strftime('%Y-%m-%d')
+            self.logger.info(f"Saved birth info for user {user_id}: {birth_date_str}, {thai_day_encoded}")
         except UnicodeEncodeError:
             # Fallback to ASCII representation if console can't handle Thai characters
             self.logger.info(f"Saved birth info for user {user_id}: {birth_date.strftime('%Y-%m-%d')}, [Thai day name]")
+        except Exception as e:
+            # General error handling for any other logging issues
+            self.logger.error(f"Error logging birth info: {str(e)}")
     
     def get_birth_info(self, user_id: str) -> Optional[Dict[str, str]]:
         """
@@ -292,12 +323,7 @@ class SessionManager:
             return False
 
 
-# Singleton instance for global access
-_session_manager = None
-
+# Thread-safe singleton access method
 def get_session_manager() -> SessionManager:
     """Get singleton instance of SessionManager"""
-    global _session_manager
-    if _session_manager is None:
-        _session_manager = SessionManager()
-    return _session_manager 
+    return SessionManager() 

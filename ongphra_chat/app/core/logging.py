@@ -64,6 +64,10 @@ LOG_FILE = "app.log"
 MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 BACKUP_COUNT = 5
 
+# Check if this is a worker process
+is_parent_process = os.environ.get("IS_PARENT_PROCESS", "true").lower() == "true"
+worker_id = os.getenv("WORKER_ID", "0")
+
 def setup_logging():
     """Setup application logging"""
     # Create logs directory if it doesn't exist
@@ -71,7 +75,17 @@ def setup_logging():
     
     # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(LOG_LEVEL)
+    
+    # Set lower log level for worker processes to reduce noise
+    if is_parent_process:
+        root_logger.setLevel(LOG_LEVEL)
+    else:
+        # Use INFO or DEBUG depending on the configured level
+        if LOG_LEVEL == "DEBUG":
+            root_logger.setLevel(logging.DEBUG)
+        else:
+            # Workers use higher level threshold to reduce noise
+            root_logger.setLevel(logging.WARNING)
     
     # Clear any existing handlers
     if root_logger.handlers:
@@ -80,7 +94,10 @@ def setup_logging():
     
     # Console handler with UTF-8 encoding
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    console_formatter = logging.Formatter(LOG_FORMAT if is_parent_process else 
+                                         f"[Worker-{worker_id}] - {LOG_FORMAT}")
+    console_handler.setFormatter(console_formatter)
+    
     # Force UTF-8 encoding for console output
     try:
         # This might not work on all platforms, so we wrap it in a try-except
@@ -93,14 +110,24 @@ def setup_logging():
     
     root_logger.addHandler(console_handler)
     
-    # File handler with rotation and UTF-8 encoding
+    # File handler with rotation and UTF-8 encoding - only add in parent process
+    # or with reduced logging level in workers
     file_handler = SafeRotatingFileHandler(
         os.path.join(LOG_DIR, LOG_FILE),
         maxBytes=MAX_LOG_SIZE,
         backupCount=BACKUP_COUNT,
         encoding='utf-8'  # Use UTF-8 encoding for log files
     )
-    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    
+    # Use different log format for workers
+    file_formatter = logging.Formatter(LOG_FORMAT if is_parent_process else
+                                      f"[Worker-{worker_id}] - {LOG_FORMAT}")
+    file_handler.setFormatter(file_formatter)
+    
+    # Set different logging levels for workers to reduce noise
+    if not is_parent_process:
+        file_handler.setLevel(logging.WARNING)
+    
     root_logger.addHandler(file_handler)
     
     # Set log levels for specific libraries
@@ -109,11 +136,19 @@ def setup_logging():
     logging.getLogger("watchfiles").setLevel(logging.ERROR)  # Disable watchfiles debug logs
     
     # Log setup complete
-    root_logger.debug("Logging setup complete")
+    if is_parent_process:
+        root_logger.debug("Logging setup complete")
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the specified name"""
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+    
+    # Set different level for repository loggers in worker processes
+    if not is_parent_process and (name.startswith("app.repository") or 
+                                 name.startswith("app.services")):
+        logger.setLevel(logging.WARNING)
+    
+    return logger
 
 def get_logger_with_level(name: str, level: Optional[str] = None) -> logging.Logger:
     """
@@ -131,43 +166,9 @@ def get_logger_with_level(name: str, level: Optional[str] = None) -> logging.Log
     # Set level if provided
     if level:
         logger.setLevel(getattr(logging, level.upper()))
-    
-    # Configure CSV operations logger if it's a repository module
-    if "repository" in name and not logger.handlers:
-        try:
-            # Create logs directory if it doesn't exist
-            logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
-            os.makedirs(logs_dir, exist_ok=True)
-            
-            # Create a file handler for CSV operations
-            csv_log_file = os.path.join(logs_dir, "csv_operations.log")
-            file_handler = SafeRotatingFileHandler(
-                csv_log_file, 
-                maxBytes=10*1024*1024,  # 10MB
-                backupCount=5,
-                encoding='utf-8'  # Ensure UTF-8 encoding
-            )
-            
-            # Set formatter
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            file_handler.setFormatter(formatter)
-            
-            # Add handler to logger
-            logger.addHandler(file_handler)
-            
-            # Add console handler as fallback
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-            
-        except Exception as e:
-            # If file handler setup fails, use console logging as fallback
-            console_handler = logging.StreamHandler(sys.stdout)
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-            
-            # Log the error to console
-            logger.warning(f"Failed to set up file logging: {str(e)}. Using console logging instead.")
+    elif not is_parent_process:
+        # For worker processes, use higher threshold
+        if name.startswith("app.repository") or name.startswith("app.services"):
+            logger.setLevel(logging.WARNING)
     
     return logger 

@@ -10,6 +10,7 @@ from app.core.exceptions import ResponseGenerationError
 from app.config.settings import get_settings
 from app.core.logging import get_logger
 from app.services.session_service import get_session_manager
+from app.utils.ai_tools import process_fortune_tool
 
 class ResponseService:
     """Service for generating responses using AI with conversation memory and streaming support"""
@@ -109,7 +110,8 @@ class ResponseService:
         language: str = "thai",
         has_birth_info: bool = False,
         user_id: Optional[str] = None,
-        stream: bool = False
+        stream: bool = False,
+        process_fortune: bool = True  # New parameter to control fortune processing
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to a user prompt using OpenAI API
@@ -120,6 +122,7 @@ class ResponseService:
             has_birth_info: Whether the user has provided birth information
             user_id: Unique identifier for the user for session tracking
             stream: Whether to stream the response
+            process_fortune: Whether to check for and process fortune requests
             
         Returns:
             Generated response as string or async generator for streaming
@@ -130,6 +133,51 @@ class ResponseService:
                 session_manager = get_session_manager()
                 session_manager.save_conversation_message(user_id, "user", prompt)
                 self.logger.debug(f"Saved user message to session for user {user_id}")
+            
+            # Check if this is a fortune request and process it if enabled
+            if process_fortune:
+                try:
+                    fortune_result = await process_fortune_tool(prompt, user_id)
+                    
+                    if fortune_result["is_fortune_request"]:
+                        self.logger.info("Detected fortune request, processing with fortune tool")
+                        
+                        if fortune_result["needs_birthdate"]:
+                            # User needs to provide birth date
+                            response_text = self._get_birthdate_request_message(language)
+                            
+                            # Save assistant response to session
+                            if user_id:
+                                session_manager = get_session_manager()
+                                session_manager.save_conversation_message(user_id, "assistant", response_text)
+                            
+                            # Return as string or stream based on request
+                            if stream:
+                                return self._stream_text(response_text, user_id)
+                            else:
+                                return response_text
+                        
+                        elif fortune_result["fortune_reading"]:
+                            # Process the fortune reading
+                            reading = fortune_result["fortune_reading"]
+                            
+                            # Format the response
+                            response_text = self._format_fortune_reading(reading, language)
+                            
+                            # Save assistant response to session
+                            if user_id:
+                                session_manager = get_session_manager()
+                                session_manager.save_conversation_message(user_id, "assistant", response_text)
+                            
+                            # Return as string or stream based on request
+                            if stream:
+                                return self._stream_text(response_text, user_id)
+                            else:
+                                return response_text
+                
+                except Exception as fortune_error:
+                    # Log the error but continue with normal response generation
+                    self.logger.error(f"Error processing fortune request: {str(fortune_error)}", exc_info=True)
             
             # Generate appropriate system prompt
             if has_birth_info:
@@ -188,6 +236,60 @@ class ResponseService:
         except Exception as e:
             self.logger.error(f"Error generating response: {str(e)}", exc_info=True)
             return "ขออภัย เกิดข้อผิดพลาดในการตอบคำถาม โปรดลองอีกครั้งในภายหลัง" if language.lower() == "thai" else "Sorry, an error occurred while generating the response. Please try again later."
+    
+    def _get_birthdate_request_message(self, language: str) -> str:
+        """Get a message asking for birth date in the appropriate language"""
+        if language.lower() == "english":
+            return ("I'd be happy to check your fortune. "
+                   "Could you please tell me your birth date? (DD/MM/YYYY)")
+        else:
+            return ("ฉันยินดีที่จะตรวจดวงชะตาให้กับคุณ "
+                   "กรุณาบอกวันเกิดของคุณ (วัน/เดือน/ปี ค.ศ.) เช่น 14/02/1996")
+    
+    def _format_fortune_reading(self, reading: Dict[str, Any], language: str) -> str:
+        """Format a fortune reading result into a user-friendly message"""
+        heading = reading.get("heading", "")
+        meaning = reading.get("meaning", "")
+        influence_type = reading.get("influence_type", "")
+        
+        # Build the response text
+        response_text = f"**{heading}**\n\n{meaning}"
+        
+        # Add influence type information if available
+        if influence_type:
+            if language.lower() == "english":
+                influence_map = {
+                    "ดี": "positive",
+                    "ไม่ดี": "negative",
+                    "ปานกลาง": "neutral"
+                }
+                influence = influence_map.get(influence_type, influence_type)
+                response_text += f"\n\nThis reading indicates a {influence} influence on your life."
+            else:
+                influence_map = {
+                    "ดี": "ดี",
+                    "ไม่ดี": "ไม่ดี",
+                    "ปานกลาง": "ปานกลาง"
+                }
+                influence = influence_map.get(influence_type, influence_type)
+                response_text += f"\n\nคำทำนายนี้แสดงถึงอิทธิพล{influence}ต่อชีวิตของคุณ"
+        
+        return response_text
+    
+    async def _stream_text(self, text: str, user_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+        """Stream a pre-defined text in chunks to mimic streaming API response"""
+        # This helper simulates streaming for pre-generated text
+        # Define chunk size
+        chunk_size = 8  # characters per chunk
+        
+        # Split text into chunks and stream
+        for i in range(0, len(text), chunk_size):
+            chunk = text[i:i+chunk_size]
+            yield chunk
+            await asyncio.sleep(0.02)  # Simulate API delay
+        
+        # Send the end of stream marker
+        yield "[DONE]"
     
     async def _generate_openai_response(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -287,7 +389,7 @@ class ResponseService:
         
         self.logger.info(f"Cleared session for user {user_id}: {session_cleared}")
         return True
-        
+    
     def clear_cache(self) -> int:
         """Clear the response cache and return number of items cleared"""
         count = len(self.response_cache)
