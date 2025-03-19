@@ -3,6 +3,7 @@ import time
 import hashlib
 from app.core.logging import get_logger
 from app.config.settings import Settings
+from functools import lru_cache
 
 class AITopicService:
     """Service for AI-powered topic detection and analysis"""
@@ -252,6 +253,7 @@ class AITopicService:
             return False
 
 # Factory function for dependency injection
+@lru_cache()
 def get_ai_topic_service() -> AITopicService:
     """Get AI topic service instance"""
     return AITopicService() 

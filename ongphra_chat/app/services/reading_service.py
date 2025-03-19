@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import re
 from fastapi import Depends
 from datetime import datetime
+from functools import lru_cache
 
 from app.domain.bases import BasesResult
 from app.domain.meaning import Reading, Category, MeaningCollection, Meaning, FortuneReading
@@ -34,6 +35,9 @@ class ReadingService:
         
         # Cache for category lookups
         self._category_cache = {}
+        
+        # Cache for meanings
+        self._meanings_cache = {}
         
         self.calculator_service = CalculatorService()
         self.ai_topic_service = AITopicService()
@@ -134,124 +138,83 @@ class ReadingService:
             self.logger.error(f"Error getting readings for base {base}, position {position}: {str(e)}")
             raise ReadingError(f"Failed to get readings: {str(e)}")
     
+    @lru_cache(maxsize=1000)
     async def extract_meanings_from_calculator_result(self, calculator_result: BasesResult) -> List[Meaning]:
-        """
-        Extract meanings from calculator result
+        """Extract meanings from calculator result with caching"""
+        cache_key = f"{calculator_result.bases}_{calculator_result.thai_day}"
         
-        Each position (1-7) in a base maps to a specific Thai category name:
-        Base 1: ['อัตตะ', 'หินะ', 'ธานัง', 'ปิตา', 'มาตา', 'โภคา', 'มัชฌิมา']
-        Base 2: ['ตะนุ', 'กดุมภะ', 'สหัชชะ', 'พันธุ', 'ปุตตะ', 'อริ', 'ปัตนิ']  
-        Base 3: ['มรณะ', 'สุภะ', 'กัมมะ', 'ลาภะ', 'พยายะ', 'ทาสา', 'ทาสี']
-        """
-        self.logger.info("Extracting meanings from calculator result")
-        
-        if not calculator_result or not calculator_result.bases:
-            self.logger.error("Invalid calculator result: missing bases")
-            raise ReadingError("Invalid calculator result: missing bases")
+        if cache_key in self._meanings_cache:
+            self.logger.info("Using cached meanings")
+            return self._meanings_cache[cache_key]
             
-        meanings = []
-        
-        # Define Thai position names for each base
-        thai_positions = {
-            1: ['อัตตะ', 'หินะ', 'ธานัง', 'ปิตา', 'มาตา', 'โภคา', 'มัชฌิมา'],  # Base 1 (Day)
-            2: ['ตะนุ', 'กดุมภะ', 'สหัชชะ', 'พันธุ', 'ปุตตะ', 'อริ', 'ปัตนิ'],  # Base 2 (Month)
-            3: ['มรณะ', 'สุภะ', 'กัมมะ', 'ลาภะ', 'พยายะ', 'ทาสา', 'ทาสี'],    # Base 3 (Year)
-        }
-        
-        # Process each base (1-4)
-        for base_num in range(1, 5):
-            base_attr = f"base{base_num}"
+        try:
+            # Get all readings from repository
+            readings = await self.reading_repository.get_all()
             
-            if not hasattr(calculator_result.bases, base_attr):
-                self.logger.warning(f"Base {base_num} not found in calculator result")
-                continue
+            # Extract meanings
+            meanings = []
+            for reading in readings:
+                if self._matches_calculator_result(reading, calculator_result):
+                    meaning = Meaning(
+                        base=reading.base,
+                        position=reading.position,
+                        value=reading.value,
+                        heading=reading.heading,
+                        meaning=reading.meaning,
+                        category=reading.category,
+                        match_score=1.0  # Initial score
+                    )
+                    meanings.append(meaning)
+            
+            # Cache the results
+            self._meanings_cache[cache_key] = meanings
+            
+            return meanings
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting meanings: {str(e)}", exc_info=True)
+            return []
+
+    def _filter_and_rank_meanings(self, meanings: List[Meaning], user_question: Optional[str] = None) -> List[Meaning]:
+        """Filter and rank meanings more efficiently"""
+        try:
+            # Start with all meanings
+            filtered_meanings = meanings.copy()
+            
+            # If no question, return top 200 meanings by match score
+            if not user_question:
+                filtered_meanings.sort(key=lambda m: m.match_score, reverse=True)
+                return filtered_meanings[:200]
+            
+            # Calculate relevance scores based on question
+            for meaning in filtered_meanings:
+                # Base score from initial matching
+                score = meaning.match_score
                 
-            base_values = getattr(calculator_result.bases, base_attr)
+                # Boost score based on question relevance
+                if user_question:
+                    # Check if question keywords appear in meaning
+                    question_words = set(user_question.lower().split())
+                    meaning_words = set(meaning.meaning.lower().split())
+                    heading_words = set(meaning.heading.lower().split())
+                    
+                    # Calculate word overlap
+                    meaning_overlap = len(question_words & meaning_words)
+                    heading_overlap = len(question_words & heading_words)
+                    
+                    # Boost score based on overlap
+                    score += meaning_overlap * 0.5  # Less weight for meaning overlap
+                    score += heading_overlap * 1.0  # More weight for heading overlap
+                
+                meaning.match_score = score
             
-            if not base_values or len(base_values) != 7:
-                self.logger.warning(f"Invalid values for base {base_num}: {base_values}")
-                continue
+            # Sort by final score and return top 200
+            filtered_meanings.sort(key=lambda m: m.match_score, reverse=True)
+            return filtered_meanings[:200]
             
-            # Process each position (0-6)
-            for position in range(7):
-                try:
-                    value = base_values[position]
-                    position_num = position + 1  # Convert to 1-indexed for database
-                    
-                    # Get the Thai position name
-                    thai_position_name = ""
-                    if base_num < 4 and position < len(thai_positions[base_num]):
-                        thai_position_name = thai_positions[base_num][position]
-                        self.logger.debug(f"Position {position_num} in Base {base_num} corresponds to '{thai_position_name}'")
-                    
-                    # Get readings for this base and position
-                    readings = await self.get_readings_for_base_position(base_num, position_num)
-                    
-                    for reading in readings:
-                        try:
-                            # Get the category for this Thai position
-                            category = None
-                            if thai_position_name:
-                                category = await self.get_category_by_element_name(thai_position_name)
-                            
-                            # Extract elements from heading for additional information
-                            element1, element2 = await self.extract_elements_from_heading(
-                                reading.heading if hasattr(reading, 'heading') else ""
-                            )
-                            
-                            # Create category string
-                            category_str = ""
-                            if category:
-                                category_str = category.category_name
-                            elif hasattr(reading, 'category') and reading.category:
-                                category_str = reading.category
-                            
-                            # If we can extract elements from the heading, use them as additional information
-                            category1 = await self.get_category_by_element_name(element1)
-                            category2 = await self.get_category_by_element_name(element2)
-                            
-                            if category1 and category2:
-                                if category_str:
-                                    category_str += f" ({category1.category_name} - {category2.category_name})"
-                                else:
-                                    category_str = f"{category1.category_name} - {category2.category_name}"
-                            elif category1:
-                                if category_str:
-                                    category_str += f" ({category1.category_name})"
-                                else:
-                                    category_str = category1.category_name
-                            elif category2:
-                                if category_str:
-                                    category_str += f" ({category2.category_name})"
-                                else:
-                                    category_str = category2.category_name
-                            
-                            # Calculate match score based on relevance to the base value
-                            match_score = self._calculate_match_score(base_num, position_num, value)
-                            
-                            # Create meaning object
-                            meaning = Meaning(
-                                base=base_num,
-                                position=position_num,
-                                value=value,
-                                heading=reading.heading if hasattr(reading, 'heading') else f"Base {base_num} Position {position_num}",
-                                meaning=reading.content if hasattr(reading, 'content') else reading.thai_content if hasattr(reading, 'thai_content') else "",
-                                category=category_str,
-                                match_score=match_score
-                            )
-                            
-                            meanings.append(meaning)
-                            
-                        except Exception as e:
-                            self.logger.error(f"Error processing reading: {str(e)}")
-                            continue
-                            
-                except Exception as e:
-                    self.logger.error(f"Error processing position {position} in base {base_num}: {str(e)}")
-                    continue
-                    
-        self.logger.info(f"Extracted {len(meanings)} meanings from calculator result")
-        return meanings
+        except Exception as e:
+            self.logger.error(f"Error in filtering meanings: {str(e)}", exc_info=True)
+            return meanings[:200]  # Return first 200 as fallback
     
     def _calculate_match_score(self, base: int, position: int, value: int) -> float:
         """
@@ -618,90 +581,6 @@ class ReadingService:
             self.logger.error(f"Error determining influence type: {str(e)}")
             return original_category
     
-    def _filter_and_rank_meanings(self, meanings: List[Meaning], user_question: Optional[str] = None) -> List[Meaning]:
-        """
-        Filter and rank meanings to provide more relevant results
-        
-        This helps when we have a large number of meanings (like 2000+) by:
-        1. Filtering out obviously irrelevant meanings 
-        2. Boosting scores for more relevant meanings based on content and context
-        """
-        if not meanings:
-            return []
-            
-        # If no question, just return all meanings
-        if not user_question:
-            return meanings
-            
-        filtered_meanings = []
-        user_question_lower = user_question.lower()
-        
-        # Keywords indicating question importance/urgency
-        importance_keywords = [
-            'จำเป็น', 'สำคัญ', 'เร่งด่วน', 'กังวล', 'กลุ้มใจ', 'ไม่สบายใจ', 
-            'ต้องการคำแนะนำ', 'ช่วยแนะนำ', 'แนะนำ', 'ทำอย่างไร', 'ทำอย่างไรดี'
-        ]
-        
-        question_has_importance = any(kw in user_question_lower for kw in importance_keywords)
-        
-        # Get all bases' values for priority filtering
-        base_values = {1: set(), 2: set(), 3: set(), 4: set()}
-        for m in meanings:
-            if 1 <= m.base <= 4:
-                base_values[m.base].add(m.value)
-        
-        # Define priority values (1, 5, 7 are often significant in Thai numerology)
-        priority_values = {1, 5, 7}
-        
-        for meaning in meanings:
-            # Start with original match score
-            adjusted_score = meaning.match_score
-            
-            # 1. Check for meaning content relevance
-            meaning_content = (meaning.meaning or "").lower()
-            
-            # Prioritize meanings with significant values
-            if meaning.value in priority_values:
-                adjusted_score *= 1.2
-            
-            # 2. Prioritize meanings from base 1 (Day) and base 4 (Sum) 
-            # which are often more significant in Thai astrology
-            if meaning.base == 1:  # Day base (personal)
-                adjusted_score *= 1.3
-            elif meaning.base == 4:  # Sum base (overview)
-                adjusted_score *= 1.2
-            
-            # 3. Prioritize center positions which are often more significant
-            if 3 <= meaning.position <= 5:
-                adjusted_score *= 1.1
-                
-            # 4. If question has urgency keywords, prioritize interpretations that have 
-            # concrete advice/guidance
-            if question_has_importance:
-                advice_indicators = ['ควร', 'แนะนำ', 'ช่วย', 'ทำ', 'อย่า', 'ระวัง', 'พยายาม']
-                if any(ind in meaning_content for ind in advice_indicators):
-                    adjusted_score *= 1.4
-            
-            # 5. Ensure adequate but not overwhelming amount of content
-            content_length = len(meaning_content)
-            if 100 <= content_length <= 500:  # Ideal length
-                adjusted_score *= 1.1
-            elif content_length > 500:  # Comprehensive reading
-                adjusted_score *= 1.05
-            elif content_length < 50:  # Too short
-                adjusted_score *= 0.8
-            
-            # Update the score and add to filtered list
-            meaning.match_score = adjusted_score
-            filtered_meanings.append(meaning)
-            
-        # Sort by adjusted score and return top results
-        filtered_meanings.sort(key=lambda m: m.match_score, reverse=True)
-        
-        # Return either all meanings or top 200, whichever is smaller
-        # This limits the processing for the find_best_meaning_for_topic method
-        return filtered_meanings[:200] if len(filtered_meanings) > 200 else filtered_meanings
-
     def find_best_meaning_for_topic(self, meanings: List[Meaning], topic_result: Dict[str, Any]) -> Optional[Meaning]:
         """Find the best meaning for a detected topic"""
         try:

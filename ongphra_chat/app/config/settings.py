@@ -85,17 +85,7 @@ class Settings(BaseSettings):
     
     def __init__(self, **data: Any):
         super().__init__(**data)
-        
-        # Set default paths if not provided
-        if self.data_dir is None:
-            self.data_dir = self.base_dir / "data"
-            
-        if self.categories_path is None:
-            self.categories_path = self.data_dir / "categories.csv"
-            
-        if self.readings_path is None:
-            self.readings_path = self.data_dir / "readings.csv"
-            
+    
         # Log loaded settings
         logger.info(f"Loaded settings from environment: DEBUG={self.debug}, ENV={self.environment}")
         if self.openai_api_key:

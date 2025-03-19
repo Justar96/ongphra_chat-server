@@ -1,8 +1,10 @@
-from typing import Optional
+from typing import Optional, Dict
 import aiohttp
 import json
 import os
 from fastapi import Depends
+import hashlib
+from functools import lru_cache
 
 from app.core.logging import get_logger
 from app.config.settings import Settings, get_settings
@@ -23,7 +25,16 @@ class OpenAIService:
         self.api_base = self.settings.openai_api_base
         self.model = self.settings.openai_model
         
+        # Initialize cache
+        self._response_cache: Dict[str, str] = {}
+        self._cache_ttl = self.settings.cache_ttl
+        
         self.logger.info(f"Initialized OpenAIService with model: {self.model}")
+    
+    def _get_cache_key(self, system_prompt: str, user_prompt: str, max_tokens: int, temperature: float) -> str:
+        """Generate a cache key from the request parameters"""
+        key_string = f"{system_prompt}|{user_prompt}|{max_tokens}|{temperature}"
+        return hashlib.md5(key_string.encode()).hexdigest()
     
     async def chat_completion(
         self, 
@@ -49,6 +60,13 @@ class OpenAIService:
             return None
             
         try:
+            # Check cache first if enabled
+            if self.settings.enable_cache:
+                cache_key = self._get_cache_key(system_prompt, user_prompt, max_tokens, temperature)
+                if cache_key in self._response_cache:
+                    self.logger.info("Using cached response")
+                    return self._response_cache[cache_key]
+            
             self.logger.info(f"Generating reading with {len(user_prompt)} chars of user prompt")
             
             headers = {
@@ -84,6 +102,11 @@ class OpenAIService:
                         
                     generated_text = result["choices"][0]["message"]["content"].strip()
                     
+                    # Cache the response if enabled
+                    if self.settings.enable_cache:
+                        cache_key = self._get_cache_key(system_prompt, user_prompt, max_tokens, temperature)
+                        self._response_cache[cache_key] = generated_text
+                    
                     # Log truncated output
                     preview = generated_text[:100] + "..." if len(generated_text) > 100 else generated_text
                     self.logger.info(f"Generated reading: {preview}")
@@ -98,8 +121,8 @@ class OpenAIService:
         """Check if the OpenAI service is configured and available"""
         return bool(self.api_key)
 
-
 # Factory function for dependency injection
+@lru_cache()
 async def get_openai_service() -> OpenAIService:
     """Get OpenAI service instance"""
     return OpenAIService() 
