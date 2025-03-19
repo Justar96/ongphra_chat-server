@@ -30,17 +30,17 @@ class ChatRepository:
         session_id = str(uuid.uuid4())
         
         # Convert session data to JSON if provided
-        session_data_json = None
+        metadata_json = None
         if session_data:
-            session_data_json = json.dumps(session_data)
+            metadata_json = json.dumps(session_data)
         
         # Insert new session
         query = """
-            INSERT INTO chat_sessions (id, user_id, session_data)
+            INSERT INTO chat_sessions (id, user_id, metadata)
             VALUES (%s, %s, %s)
         """
         
-        await self._execute_query(query, session_id, user_id, session_data_json)
+        await self._execute_query(query, session_id, user_id, metadata_json)
         self.logger.info(f"Created new chat session {session_id} for user {user_id}")
         
         return session_id
@@ -56,7 +56,7 @@ class ChatRepository:
             ChatSession object if found, None otherwise
         """
         query = """
-            SELECT id, user_id, created_at, updated_at, is_active, session_data
+            SELECT id, user_id, created_at, updated_at, is_active, metadata
             FROM chat_sessions
             WHERE id = %s
         """
@@ -69,12 +69,12 @@ class ChatRepository:
         session_data = results[0]
         
         # Parse JSON data if available
-        metadata = None
-        if session_data["session_data"]:
+        metadata_dict = None
+        if session_data["metadata"]:
             try:
-                metadata = json.loads(session_data["session_data"])
+                metadata_dict = json.loads(session_data["metadata"])
             except json.JSONDecodeError:
-                self.logger.warning(f"Failed to parse session data JSON for session {session_id}")
+                self.logger.warning(f"Failed to parse session metadata JSON for session {session_id}")
         
         return ChatSession(
             id=session_data["id"],
@@ -82,7 +82,7 @@ class ChatRepository:
             created_at=session_data["created_at"],
             updated_at=session_data["updated_at"],
             is_active=session_data["is_active"],
-            metadata=metadata
+            metadata=metadata_dict
         )
     
     async def get_user_sessions(self, user_id: str, limit: int = 10, active_only: bool = True) -> List[ChatSession]:
@@ -99,7 +99,7 @@ class ChatRepository:
         """
         # Build query based on parameters
         query = """
-            SELECT id, user_id, created_at, updated_at, is_active, session_data
+            SELECT id, user_id, created_at, updated_at, is_active, metadata
             FROM chat_sessions
             WHERE user_id = %s
         """
@@ -117,12 +117,12 @@ class ChatRepository:
         sessions = []
         for row in results:
             # Parse JSON data if available
-            metadata = None
-            if row["session_data"]:
+            metadata_dict = None
+            if row["metadata"]:
                 try:
-                    metadata = json.loads(row["session_data"])
+                    metadata_dict = json.loads(row["metadata"])
                 except json.JSONDecodeError:
-                    self.logger.warning(f"Failed to parse session data JSON for session {row['id']}")
+                    self.logger.warning(f"Failed to parse metadata JSON for session {row['id']}")
             
             sessions.append(ChatSession(
                 id=row["id"],
@@ -130,7 +130,7 @@ class ChatRepository:
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
                 is_active=row["is_active"],
-                metadata=metadata
+                metadata=metadata_dict
             ))
         
         return sessions
@@ -156,7 +156,7 @@ class ChatRepository:
             params.append(is_active)
         
         if session_data is not None:
-            query_parts.append("session_data = %s")
+            query_parts.append("metadata = %s")
             params.append(json.dumps(session_data))
         
         # If nothing to update, return early

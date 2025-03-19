@@ -226,7 +226,7 @@ async def stream_chat_response(
             session_id=session_id
         )
                 
-        # Use ResponseService for streaming - properly await the coroutine that returns the generator
+        # Get response generator from ResponseService
         streaming_generator = await response_service.generate_response(
             prompt=prompt,
             language=language,
@@ -236,23 +236,26 @@ async def stream_chat_response(
             process_fortune=enable_fortune  # Pass the enable_fortune parameter
         )
         
-        # Create a wrapper generator to save the response and collect the full output
+        # Create a wrapper generator to save the full response
         async def stream_and_save():
             full_response = ""
-            is_fortune = False
-            heading = ""
             
+            # Stream the response chunks
             async for chunk in streaming_generator:
-                # Collect the full response
+                # Add to full response
                 full_response += chunk
+                
+                # Yield the chunk to the client
                 yield chunk
             
-            # After streaming is complete, check if we processed a fortune
+            # After streaming completes, check if this was a fortune reading
             last_reading = session_manager.get_context_data(user_id, "last_reading")
             is_fortune = last_reading is not None
+            
+            # Get heading if available
             heading = last_reading.get("heading", "") if last_reading else ""
             
-            # Save full assistant response to database after streaming is complete
+            # Save complete response to database
             await chat_service.save_message(
                 user_id=user_id,
                 content=full_response,
@@ -266,6 +269,9 @@ async def stream_chat_response(
                 }
             )
             
+            # Send end marker
+            yield "[DONE]"
+        
         # Create a streaming response
         return StreamingResponse(
             stream_and_save(),
@@ -274,7 +280,7 @@ async def stream_chat_response(
     except Exception as e:
         logger.error(f"Error getting streaming chat response: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting streaming chat response: {str(e)}")
-
+    
 @router.delete("/session/{user_id}")
 async def clear_session(
     user_id: str = Path(..., description="User ID to clear"),

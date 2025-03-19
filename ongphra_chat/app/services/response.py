@@ -111,7 +111,7 @@ class ResponseService:
         has_birth_info: bool = False,
         user_id: Optional[str] = None,
         stream: bool = False,
-        process_fortune: bool = True  # New parameter to control fortune processing
+        process_fortune: bool = True  # Parameter to control fortune processing
     ) -> Union[str, AsyncGenerator[str, None]]:
         """
         Generate a response to a user prompt using OpenAI API
@@ -134,10 +134,12 @@ class ResponseService:
                 session_manager.save_conversation_message(user_id, "user", prompt)
                 self.logger.debug(f"Saved user message to session for user {user_id}")
             
-            # Check if this is a fortune request and process it if enabled
+            # Process fortune detection first if enabled
+            fortune_result = None
             if process_fortune:
                 try:
                     fortune_result = await process_fortune_tool(prompt, user_id)
+                    self.logger.debug(f"Fortune detection result: {fortune_result['is_fortune_request']}")
                     
                     if fortune_result["is_fortune_request"]:
                         self.logger.info("Detected fortune request, processing with fortune tool")
@@ -148,12 +150,11 @@ class ResponseService:
                             
                             # Save assistant response to session
                             if user_id:
-                                session_manager = get_session_manager()
                                 session_manager.save_conversation_message(user_id, "assistant", response_text)
                             
                             # Return as string or stream based on request
                             if stream:
-                                return self._stream_text(response_text, user_id)
+                                return self._stream_text(response_text)
                             else:
                                 return response_text
                         
@@ -166,12 +167,15 @@ class ResponseService:
                             
                             # Save assistant response to session
                             if user_id:
-                                session_manager = get_session_manager()
                                 session_manager.save_conversation_message(user_id, "assistant", response_text)
+                            
+                            # Save reading data to session context for tracking
+                            if user_id:
+                                session_manager.save_context_data(user_id, "last_reading", reading)
                             
                             # Return as string or stream based on request
                             if stream:
-                                return self._stream_text(response_text, user_id)
+                                return self._stream_text(response_text)
                             else:
                                 return response_text
                 
@@ -179,9 +183,15 @@ class ResponseService:
                     # Log the error but continue with normal response generation
                     self.logger.error(f"Error processing fortune request: {str(fortune_error)}", exc_info=True)
             
+            # If we reach here, either:
+            # 1. Fortune processing is disabled
+            # 2. It's not a fortune request
+            # 3. Fortune processing failed
+            # Continue with normal response generation
+            
             # Generate appropriate system prompt
             if has_birth_info:
-                system_prompt = self.prompt_service.generate_general_system_prompt(language)
+                system_prompt = self.prompt_service.generate_system_prompt(language)
             else:
                 system_prompt = self.prompt_service.generate_general_system_prompt(language)
             
@@ -236,7 +246,7 @@ class ResponseService:
         except Exception as e:
             self.logger.error(f"Error generating response: {str(e)}", exc_info=True)
             return "ขออภัย เกิดข้อผิดพลาดในการตอบคำถาม โปรดลองอีกครั้งในภายหลัง" if language.lower() == "thai" else "Sorry, an error occurred while generating the response. Please try again later."
-    
+        
     def _get_birthdate_request_message(self, language: str) -> str:
         """Get a message asking for birth date in the appropriate language"""
         if language.lower() == "english":
@@ -276,9 +286,16 @@ class ResponseService:
         
         return response_text
     
-    async def _stream_text(self, text: str, user_id: Optional[str] = None) -> AsyncGenerator[str, None]:
-        """Stream a pre-defined text in chunks to mimic streaming API response"""
-        # This helper simulates streaming for pre-generated text
+    async def _stream_text(self, text: str) -> AsyncGenerator[str, None]:
+        """
+        Stream a pre-defined text in chunks to mimic streaming API response
+        
+        Args:
+            text: The text to stream
+            
+        Yields:
+            Chunks of the text
+        """
         # Define chunk size
         chunk_size = 8  # characters per chunk
         

@@ -34,7 +34,7 @@ async def process_fortune_tool(user_message: str, user_id: str = None) -> Dict[s
         - user_message: Original user message
         - extracted_birthdate: Birth date extracted from message (if any)
     """
-    logger.info(f"AI tool called to process potential fortune request")
+    logger.info(f"Processing potential fortune request: '{user_message[:50]}...'")
     
     try:
         # Call the fortune handler function
@@ -57,9 +57,10 @@ async def process_fortune_tool(user_message: str, user_id: str = None) -> Dict[s
             "error": str(e),
             "is_fortune_request": False,
             "needs_birthdate": False,
-            "user_message": user_message
+            "user_message": user_message,
+            "fortune_reading": None
         }
-
+        
 def get_available_ai_tools() -> Dict[str, Any]:
     """
     Get a dictionary of all available AI tools
