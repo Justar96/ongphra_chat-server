@@ -21,26 +21,46 @@ class PromptService:
         """Initialize prompt templates for different languages and contexts"""
         # Thai fortune telling system prompt
         self.fortune_thai_prompt = """
-        คุณเป็นนักพยากรณ์ที่เชี่ยวชาญในการทำนายดวงชะตาตามหลักโหราศาสตร์ไทย
-        คุณสามารถให้คำทำนายที่ละเอียดและแม่นยำโดยใช้ข้อมูลวันเกิดและวันเกิดตามปฏิทินไทย
+        คุณเป็นนักพยากรณ์ที่เชี่ยวชาญในการทำนายดวงชะตาตามหลักโหราศาสตร์ไทยที่มีประสบการณ์มากกว่า 20 ปี
+        คุณมีความเชี่ยวชาญในการวิเคราะห์ดวงชะตาโดยใช้หลักการคำนวณฐานเลข 7 ตามตำราโบราณของไทย
         
-        ให้คำตอบที่ชัดเจน เป็นกันเอง และมีรายละเอียดเพียงพอ แต่ไม่ยาวเกินไป
-        ใช้ภาษาที่เข้าใจง่าย หลีกเลี่ยงศัพท์เทคนิคที่ซับซ้อนเกินไป
+        ในการทำนาย:
+        1. วิเคราะห์ความสัมพันธ์ระหว่างฐานต่างๆ (ฐานวัน เดือน ปี และผลรวม)
+        2. พิจารณาความหมายของแต่ละตำแหน่งในฐาน (อัตตะ หินะ ธานัง ฯลฯ)
+        3. ตีความความสัมพันธ์ระหว่างดวงและคำถามของผู้ใช้
+        4. ให้คำแนะนำที่เป็นประโยชน์และสามารถนำไปปฏิบัติได้จริง
         
-        เมื่อผู้ใช้ถามเกี่ยวกับดวงชะตา ให้ตอบตามข้อมูลที่ได้รับจากการวิเคราะห์ตามหลักโหราศาสตร์ไทย
-        ถ้าผู้ใช้ถามคำถามทั่วไปที่ไม่เกี่ยวกับการทำนาย ให้ตอบอย่างสุภาพและเป็นมิตร
+        รูปแบบการตอบ:
+        - ให้คำทำนายที่ชัดเจน ตรงประเด็น และมีเหตุผล
+        - ใช้ภาษาที่เข้าใจง่าย เป็นกันเอง แต่สุภาพ
+        - อธิบายที่มาของคำทำนายโดยอ้างอิงจากฐานและความหมาย
+        - เสริมด้วยคำแนะนำที่เป็นประโยชน์
+        - หลีกเลี่ยงคำทำนายที่สร้างความกังวลหรือความกลัว
+        
+        เมื่อผู้ใช้ถามเกี่ยวกับดวงชะตา ให้วิเคราะห์ข้อมูลอย่างรอบคอบและให้คำทำนายที่สมเหตุสมผล
+        หากมีข้อสงสัยหรือต้องการข้อมูลเพิ่มเติม ให้ถามคำถามที่เฉพาะเจาะจง
         """
         
         # English fortune telling system prompt
         self.fortune_english_prompt = """
-        You are an expert fortune teller specializing in Thai astrology.
-        You can provide detailed and accurate predictions using birth date and Thai calendar information.
+        You are a highly experienced Thai astrologer with over 20 years of expertise in fortune telling.
+        You specialize in analyzing destiny using the traditional Thai Base-7 calculation system.
         
-        Give clear, friendly, and sufficiently detailed answers, but not too lengthy.
-        Use accessible language, avoiding overly technical terms.
+        In your readings:
+        1. Analyze relationships between different bases (Day, Month, Year, and Sum)
+        2. Consider the meaning of each position (Atta, Hina, Thanang, etc.)
+        3. Interpret connections between the chart and user's questions
+        4. Provide practical and actionable guidance
         
-        When users ask about their fortune, respond based on the analysis according to Thai astrological principles.
-        If users ask general questions unrelated to fortune telling, respond politely and friendly.
+        Response format:
+        - Give clear, focused, and well-reasoned predictions
+        - Use accessible yet respectful language
+        - Explain the basis of predictions by referencing bases and meanings
+        - Include helpful recommendations
+        - Avoid predictions that may cause anxiety or fear
+        
+        When users ask about their fortune, analyze the information thoroughly and provide rational predictions.
+        If clarification is needed, ask specific questions to gather more information.
         """
         
         # Thai general conversation prompt
@@ -62,6 +82,94 @@ class PromptService:
         If you're unsure about an answer, state that you don't know rather than guessing.
         If the user asks about fortune telling, suggest they provide their birth information for an accurate reading.
         """
+        
+        # Topic-specific prompts
+        self.topic_prompts = {
+            "การเงิน": {
+                "thai": """
+                ในการวิเคราะห์เรื่องการเงิน ให้พิจารณา:
+                1. ตำแหน่งหินะ (ทรัพย์สิน) ในทุกฐาน
+                2. ความสัมพันธ์กับตำแหน่งโภคา (การงาน)
+                3. อิทธิพลของฐานเดือนต่อรายได้ประจำ
+                4. แนวโน้มการเงินระยะยาวจากฐานปี
+                
+                ให้คำแนะนำเกี่ยวกับ:
+                - การบริหารจัดการการเงิน
+                - โอกาสทางธุรกิจหรือการลงทุน
+                - การวางแผนการเงินระยะยาว
+                - การแก้ไขปัญหาหรือข้อกังวลทางการเงิน
+                """,
+                "english": """
+                For financial analysis, consider:
+                1. Hina (Wealth) position in all bases
+                2. Relationship with Bhoga (Career) position
+                3. Monthly base influence on regular income
+                4. Long-term financial trends from yearly base
+                
+                Provide guidance on:
+                - Financial management
+                - Business or investment opportunities
+                - Long-term financial planning
+                - Addressing financial concerns
+                """
+            },
+            "ความรัก": {
+                "thai": """
+                ในการวิเคราะห์เรื่องความรัก ให้พิจารณา:
+                1. ตำแหน่งมาตา (ความรัก) ในทุกฐาน
+                2. ความสัมพันธ์กับตำแหน่งมัชฌิมา (คู่ครอง)
+                3. อิทธิพลของฐานเดือนต่อความสัมพันธ์ปัจจุบัน
+                4. แนวโน้มความรักระยะยาวจากฐานปี
+                
+                ให้คำแนะนำเกี่ยวกับ:
+                - การพัฒนาความสัมพันธ์
+                - การแก้ไขปัญหาความรัก
+                - การเตรียมพร้อมสำหรับอนาคต
+                - การสร้างความเข้าใจระหว่างคู่รัก
+                """,
+                "english": """
+                For love analysis, consider:
+                1. Mata (Love) position in all bases
+                2. Relationship with Majjhima (Partnership)
+                3. Monthly base influence on current relationships
+                4. Long-term relationship trends from yearly base
+                
+                Provide guidance on:
+                - Relationship development
+                - Resolving romantic issues
+                - Future preparation
+                - Building understanding between partners
+                """
+            },
+            "สุขภาพ": {
+                "thai": """
+                ในการวิเคราะห์เรื่องสุขภาพ ให้พิจารณา:
+                1. ตำแหน่งโภคา (สุขภาพ) ในทุกฐาน
+                2. ความสัมพันธ์กับตำแหน่งอัตตะ (ร่างกาย)
+                3. อิทธิพลของฐานเดือนต่อสุขภาพปัจจุบัน
+                4. แนวโน้มสุขภาพระยะยาวจากฐานปี
+                
+                ให้คำแนะนำเกี่ยวกับ:
+                - การดูแลสุขภาพเชิงป้องกัน
+                - การปรับเปลี่ยนพฤติกรรมสุขภาพ
+                - การเสริมสร้างพลังกายและใจ
+                - การแก้ไขปัญหาสุขภาพที่กังวล
+                """,
+                "english": """
+                For health analysis, consider:
+                1. Bhoga (Health) position in all bases
+                2. Relationship with Atta (Body) position
+                3. Monthly base influence on current health
+                4. Long-term health trends from yearly base
+                
+                Provide guidance on:
+                - Preventive healthcare
+                - Health behavior modifications
+                - Physical and mental strengthening
+                - Addressing health concerns
+                """
+            }
+        }
     
     def generate_system_prompt(self, language: str = "thai") -> str:
         """
@@ -111,13 +219,33 @@ class PromptService:
             # Return template with missing variables marked
             return template
 
+    def get_topic_prompt(self, topic: str, language: str = "thai") -> Optional[str]:
+        """
+        Get a topic-specific prompt for more focused readings
+        
+        Args:
+            topic: The topic to get guidance for
+            language: The language to use (thai or english)
+            
+        Returns:
+            Topic-specific prompt if available, None otherwise
+        """
+        try:
+            if topic in self.topic_prompts:
+                return self.topic_prompts[topic][language.lower()].strip()
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting topic prompt: {str(e)}")
+            return None
+            
     def generate_user_prompt(
         self,
         birth_info: BirthInfo,
         bases: Bases,
         meanings: MeaningCollection,
         question: str,
-        language: str = "thai"
+        language: str = "thai",
+        topic: Optional[str] = None
     ) -> str:
         """
         Generate a user prompt for fortune telling based on birth information and question
@@ -128,6 +256,7 @@ class PromptService:
             meanings: Extracted meanings
             question: User's question
             language: Prompt language (thai or english)
+            topic: Optional topic for specialized guidance
             
         Returns:
             Generated prompt for the AI model
@@ -184,23 +313,36 @@ class PromptService:
                 - Thai Day: {birth_info.day}
                 - Zodiac Animal: {birth_info.year_animal}
                 
-                Calculated Bases:
-                - Base 1 (Day Base): {base1_str}
-                  Detailed: {base1_detail}
-                - Base 2 (Month Base): {base2_str}
-                  Detailed: {base2_detail}
-                - Base 3 (Year Base): {base3_str}
-                  Detailed: {base3_detail}
-                - Base 4 (Sum Base): {base4_str}
-                  Detailed: {base4_detail}
+                Chart Analysis:
+                1. Base Analysis:
+                   - Day Base (Personal): {base1_str}
+                     Details: {base1_detail}
+                     Focus: Daily life, personality, immediate concerns
+                   
+                   - Month Base (Environmental): {base2_str}
+                     Details: {base2_detail}
+                     Focus: Monthly influences, relationships, work environment
+                   
+                   - Year Base (Long-term): {base3_str}
+                     Details: {base3_detail}
+                     Focus: Yearly trends, major life changes, destiny
+                   
+                   - Sum Base (Overview): {base4_str}
+                     Details: {base4_detail}
+                     Focus: Overall life direction and potential
                 
-                House Descriptions:
+                2. House Influences:
                 {house_desc_str}
                 
-                Extracted Meanings:
+                3. Relevant Meanings:
                 {meanings_str if meanings_str else "No specific meanings extracted."}
                 
-                Please provide a fortune telling reading based on this information, focusing on the user's question.
+                Please provide a fortune reading that:
+                1. Directly addresses the user's question
+                2. Explains the relevant base influences
+                3. Identifies key house positions affecting the question
+                4. Provides specific insights based on the chart
+                5. Offers practical guidance or recommendations
                 """
             else:
                 prompt = f"""
@@ -211,24 +353,50 @@ class PromptService:
                 - วันไทย: {birth_info.day}
                 - ปีนักษัตร: {birth_info.year_animal}
                 
-                ฐานที่คำนวณได้:
-                - ฐาน 1 (ฐานวันเกิด): {base1_str}
-                  รายละเอียด: {base1_detail}
-                - ฐาน 2 (ฐานเดือนเกิด): {base2_str}
-                  รายละเอียด: {base2_detail}
-                - ฐาน 3 (ฐานปีเกิด): {base3_str}
-                  รายละเอียด: {base3_detail}
-                - ฐาน 4 (ฐานรวม): {base4_str}
-                  รายละเอียด: {base4_detail}
+                การวิเคราะห์ดวง:
+                1. วิเคราะห์ฐาน:
+                   - ฐานวัน (ส่วนตัว): {base1_str}
+                     รายละเอียด: {base1_detail}
+                     จุดเน้น: ชีวิตประจำวัน บุคลิกภาพ เรื่องเร่งด่วน
+                   
+                   - ฐานเดือน (สิ่งแวดล้อม): {base2_str}
+                     รายละเอียด: {base2_detail}
+                     จุดเน้น: อิทธิพลรายเดือน ความสัมพันธ์ สภาพแวดล้อมการทำงาน
+                   
+                   - ฐานปี (ระยะยาว): {base3_str}
+                     รายละเอียด: {base3_detail}
+                     จุดเน้น: แนวโน้มรายปี การเปลี่ยนแปลงครั้งสำคัญ โชคชะตา
+                   
+                   - ฐานรวม (ภาพรวม): {base4_str}
+                     รายละเอียด: {base4_detail}
+                     จุดเน้น: ทิศทางชีวิตโดยรวมและศักยภาพ
                 
-                คำอธิบายภพ:
+                2. อิทธิพลของภพ:
                 {house_desc_str}
                 
-                ความหมายที่สกัดได้:
+                3. ความหมายที่เกี่ยวข้อง:
                 {meanings_str if meanings_str else "ไม่พบความหมายเฉพาะ"}
                 
-                กรุณาให้คำทำนายตามข้อมูลนี้ โดยเน้นตอบคำถามของผู้ใช้
+                กรุณาให้คำทำนายที่:
+                1. ตอบคำถามของผู้ใช้โดยตรง
+                2. อธิบายอิทธิพลของฐานที่เกี่ยวข้อง
+                3. ระบุตำแหน่งภพสำคัญที่ส่งผลต่อคำถาม
+                4. ให้ข้อมูลเชิงลึกตามดวง
+                5. เสนอคำแนะนำที่นำไปปฏิบัติได้
                 """
+            
+            # Add topic-specific guidance if available
+            topic_guidance = ""
+            if topic:
+                topic_prompt = self.get_topic_prompt(topic, language)
+                if topic_prompt:
+                    topic_guidance = f"\nSpecialized Guidance for {topic}:\n{topic_prompt}\n"
+            
+            # Add topic guidance to the prompt
+            if language.lower() == "english":
+                prompt += topic_guidance
+            else:
+                prompt += f"\nคำแนะนำเฉพาะสำหรับ{topic}:\n{topic_guidance}\n"
             
             self.logger.debug(f"Generated user prompt with {len(prompt)} characters")
             return prompt

@@ -128,7 +128,7 @@ async def handle_fortune_request(user_message: str, user_id: str = None) -> Dict
             reading = await reading_service.get_fortune_reading(
                 birth_date=birth_date_obj,
                 thai_day=thai_day,
-                question=user_message,
+                user_question=user_message,
                 user_id=user_id
             )
             
