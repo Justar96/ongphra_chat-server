@@ -11,6 +11,7 @@ class Meaning(BaseModel):
     heading: str
     meaning: str
     category: Optional[str] = None
+    match_score: float = 5.0  # Default value for match score
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response"""
@@ -20,7 +21,8 @@ class Meaning(BaseModel):
             "value": self.value,
             "heading": self.heading,
             "meaning": self.meaning,
-            "category": self.category
+            "category": self.category,
+            "match_score": self.match_score
         }
     
     @property
@@ -63,6 +65,11 @@ class Category(BaseModel):
     
     class Config:
         from_attributes = True
+    
+    @property
+    def category_name(self) -> str:
+        """Accessor for category_name for compatibility with code that uses this field"""
+        return self.name
 
 
 class CategoryCombination(BaseModel):
@@ -88,6 +95,16 @@ class Reading(BaseModel):
     
     class Config:
         from_attributes = True
+    
+    @property
+    def content(self) -> str:
+        """Accessor for content field for compatibility with code that uses this field"""
+        return self.meaning
+    
+    @property
+    def thai_content(self) -> str:
+        """Accessor for thai_content field for compatibility with code that uses this field"""
+        return self.meaning
 
 
 class FortuneReading(BaseModel):

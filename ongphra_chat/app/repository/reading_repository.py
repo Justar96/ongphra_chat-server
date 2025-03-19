@@ -158,3 +158,9 @@ class ReadingRepository(DBRepository[Reading]):
         except Exception as e:
             self.logger.error(f"Error retrieving readings for combination IDs {combination_ids}: {str(e)}", exc_info=True)
             raise
+
+# Factory function for dependency injection
+def get_reading_repository() -> ReadingRepository:
+    """Get reading repository instance"""
+    from app.domain.meaning import Reading
+    return ReadingRepository(Reading)

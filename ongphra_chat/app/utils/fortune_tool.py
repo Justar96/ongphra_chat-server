@@ -120,18 +120,29 @@ async def handle_fortune_request(user_message: str, user_id: str = None) -> Dict
         if not birth_date_obj and extracted_date:
             birth_date_obj = extracted_date
         
-        # Get reading service
-        reading_service = await get_reading_service()
-        
-        # Get fortune reading
-        reading = await reading_service.get_fortune_reading(
-            birth_date=birth_date_obj,
-            thai_day=thai_day,
-            question=user_message,
-            user_id=user_id
-        )
-        
-        result["fortune_reading"] = reading.dict()
+        try:
+            # Get reading service
+            reading_service = await get_reading_service()
+            
+            # Get fortune reading
+            reading = await reading_service.get_fortune_reading(
+                birth_date=birth_date_obj,
+                thai_day=thai_day,
+                question=user_message,
+                user_id=user_id
+            )
+            
+            result["fortune_reading"] = reading.dict()
+        except Exception as e:
+            logger.error(f"Error getting fortune reading: {str(e)}", exc_info=True)
+            result["fortune_reading"] = {
+                "birth_date": birth_date_obj.strftime("%Y-%m-%d") if birth_date_obj else "",
+                "thai_day": thai_day if thai_day else "",
+                "question": user_message,
+                "heading": "เกิดข้อผิดพลาด",
+                "meaning": f"เกิดข้อผิดพลาดในการวิเคราะห์: {str(e)}",
+                "influence_type": "ไม่ทราบ"
+            }
     else:
         # We need to ask for birth date
         result["needs_birthdate"] = True

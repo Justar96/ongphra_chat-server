@@ -173,3 +173,9 @@ class CategoryRepository(DBRepository[Category]):
         except Exception as e:
             self.logger.error(f"Error retrieving combinations involving categories {category1_id} and {category2_id}: {str(e)}", exc_info=True)
             raise
+
+# Factory function for dependency injection
+def get_category_repository() -> CategoryRepository:
+    """Get category repository instance"""
+    from app.domain.meaning import Category
+    return CategoryRepository(Category)

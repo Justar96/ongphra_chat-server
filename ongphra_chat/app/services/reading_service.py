@@ -476,5 +476,31 @@ async def get_reading_service(
     reading_repository: ReadingRepository = Depends(),
     category_repository: CategoryRepository = Depends()
 ) -> ReadingService:
-    """Get reading service instance"""
-    return ReadingService(reading_repository, category_repository)
+    """Get reading service instance when called from code or through dependency injection"""
+    # For direct calls outside of FastAPI's dependency injection system,
+    # we need to create new repository instances
+    try:
+        # If this is called directly (not through FastAPI's DI system)
+        # Just create new repositories directly
+        from app.repository.reading_repository import get_reading_repository
+        from app.repository.category_repository import get_category_repository
+        
+        # Always create new repositories when called directly
+        direct_reading_repo = get_reading_repository()
+        direct_category_repo = get_category_repository()
+        
+        return ReadingService(direct_reading_repo, direct_category_repo)
+    except Exception as e:
+        # Log the error but don't crash
+        import logging
+        logging.error(f"Error in get_reading_service: {str(e)}")
+        
+        # Create repositories directly as a last resort
+        from app.domain.meaning import Reading, Category
+        from app.repository.reading_repository import ReadingRepository
+        from app.repository.category_repository import CategoryRepository
+        
+        reading_repo = ReadingRepository(Reading)
+        category_repo = CategoryRepository(Category)
+        
+        return ReadingService(reading_repo, category_repo)
