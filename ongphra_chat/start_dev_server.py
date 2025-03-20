@@ -33,6 +33,9 @@ def start_dev_server():
         project_root = Path(__file__).resolve().parent
         os.chdir(project_root)
         
+        # Add the project root to the Python path
+        sys.path.insert(0, str(project_root))
+        
         # Configure environment and logging
         setup_environment()
         configure_logging()

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # API settings
-    openai_api_key: Optional[str] = Field(default=os.getenv("OPENAI_API_KEY"), env="OPENAI_API_KEY")
+    openai_api_key: str = Field(default=os.getenv("OPENAI_API_KEY", ""), env="OPENAI_API_KEY")
     default_model: str = Field(default=os.getenv("DEFAULT_MODEL", "gpt-4o-mini"), env="DEFAULT_MODEL")
     
     # OpenAI API settings
@@ -30,6 +30,32 @@ class Settings(BaseSettings):
     enable_ai_readings: bool = Field(default=os.getenv("ENABLE_AI_READINGS", "true").lower() == "true", env="ENABLE_AI_READINGS")
     ai_reading_max_tokens: int = Field(default=int(os.getenv("AI_READING_MAX_TOKENS", "1000")), env="AI_READING_MAX_TOKENS")
     ai_reading_temperature: float = Field(default=float(os.getenv("AI_READING_TEMPERATURE", "0.7")), env="AI_READING_TEMPERATURE")
+    
+    # AI Model Configuration
+    ai_topic_model: str = Field(default=os.getenv("AI_TOPIC_MODEL", "thai-topic-v1"), env="AI_TOPIC_MODEL")
+    ai_topic_confidence_threshold: float = Field(default=float(os.getenv("AI_TOPIC_CONFIDENCE_THRESHOLD", "0.6")), env="AI_TOPIC_CONFIDENCE_THRESHOLD")
+    ai_sentiment_model: str = Field(default=os.getenv("AI_SENTIMENT_MODEL", "thai-sentiment-v1"), env="AI_SENTIMENT_MODEL")
+    
+    # Redis settings
+    redis_enabled: bool = Field(default=os.getenv("REDIS_ENABLED", "true").lower() == "true", env="REDIS_ENABLED")
+    redis_host: str = Field(default=os.getenv("REDIS_HOST", "localhost"), env="REDIS_HOST")
+    redis_port: int = Field(default=int(os.getenv("REDIS_PORT", "6379")), env="REDIS_PORT")
+    redis_db: int = Field(default=int(os.getenv("REDIS_DB", "0")), env="REDIS_DB")
+    redis_password: Optional[str] = Field(default=os.getenv("REDIS_PASSWORD"), env="REDIS_PASSWORD")
+    redis_ssl: bool = Field(default=os.getenv("REDIS_SSL", "false").lower() == "true", env="REDIS_SSL")
+    redis_timeout: int = Field(default=int(os.getenv("REDIS_TIMEOUT", "5")), env="REDIS_TIMEOUT")
+    redis_retry_interval: int = Field(default=int(os.getenv("REDIS_RETRY_INTERVAL", "300")), env="REDIS_RETRY_INTERVAL")
+    redis_max_retries: int = Field(default=int(os.getenv("REDIS_MAX_RETRIES", "3")), env="REDIS_MAX_RETRIES")
+    
+    @property
+    def redis_url(self) -> str:
+        """Get Redis URL with proper configuration"""
+        if not self.redis_enabled:
+            return ""
+            
+        auth = f":{self.redis_password}@" if self.redis_password else ""
+        protocol = "rediss" if self.redis_ssl else "redis"
+        return f"{protocol}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
     
     # App settings
     debug: bool = Field(default=os.getenv("DEBUG", "false").lower() == "true", env="DEBUG")
@@ -85,9 +111,25 @@ class Settings(BaseSettings):
     
     def __init__(self, **data: Any):
         super().__init__(**data)
-    
+        
         # Log loaded settings
         logger.info(f"Loaded settings from environment: DEBUG={self.debug}, ENV={self.environment}")
+        
+        # Log AI model configurations
+        logger.info(f"AI Models Configuration:")
+        logger.info(f"- OpenAI Model: {self.openai_model}")
+        logger.info(f"- Topic Detection Model: {self.ai_topic_model}")
+        logger.info(f"- Sentiment Analysis Model: {self.ai_sentiment_model}")
+        logger.info(f"- AI Reading Max Tokens: {self.ai_reading_max_tokens}")
+        logger.info(f"- AI Reading Temperature: {self.ai_reading_temperature}")
+        
+        # Log Redis configuration
+        if self.redis_enabled:
+            masked_url = self.redis_url.replace(self.redis_password or "", "***" if self.redis_password else "")
+            logger.info(f"Redis enabled: {masked_url}")
+        else:
+            logger.info("Redis disabled, using in-memory cache")
+        
         if self.openai_api_key:
             logger.info("OpenAI API key found")
         else:

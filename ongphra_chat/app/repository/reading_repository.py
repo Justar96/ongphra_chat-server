@@ -159,6 +159,43 @@ class ReadingRepository(DBRepository[Reading]):
             self.logger.error(f"Error retrieving readings for combination IDs {combination_ids}: {str(e)}", exc_info=True)
             raise
 
+    async def get_by_category_name(self, category_name: str) -> List[Reading]:
+        """
+        Get readings associated with a specific category name
+        
+        Args:
+            category_name: Name of the category to search for
+            
+        Returns:
+            List of readings where the category name is used in a combination
+        """
+        if not category_name:
+            self.logger.warning("No category name provided for reading lookup")
+            return []
+        
+        self.logger.debug(f"Getting readings for category name: {category_name}")
+        
+        try:
+            # Query looks for readings where the category name matches in any position
+            query = """
+                SELECT r.* 
+                FROM readings r
+                JOIN category_combinations cc ON r.combination_id = cc.id
+                JOIN categories c1 ON cc.category1_id = c1.id
+                JOIN categories c2 ON cc.category2_id = c2.id
+                LEFT JOIN categories c3 ON cc.category3_id = c3.id
+                WHERE c1.name = %s OR c2.name = %s OR (c3.id IS NOT NULL AND c3.name = %s)
+                ORDER BY r.id
+            """
+            
+            results = await self.execute_raw_query(query, category_name, category_name, category_name)
+            readings = [self.model_class(**row) for row in results]
+            self.logger.debug(f"Found {len(readings)} readings for category name: {category_name}")
+            return readings
+        except Exception as e:
+            self.logger.error(f"Error retrieving readings for category name {category_name}: {str(e)}", exc_info=True)
+            raise
+
 # Factory function for dependency injection
 def get_reading_repository() -> ReadingRepository:
     """Get reading repository instance"""

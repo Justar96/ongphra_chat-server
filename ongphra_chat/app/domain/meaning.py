@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class Meaning(BaseModel):
     """Individual meaning model"""
+    id: Optional[int] = None  # Make id optional
     base: int
     position: int
     value: int
@@ -16,6 +17,7 @@ class Meaning(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response"""
         return {
+            "id": self.id,
             "base": self.base,
             "position": self.position,
             "value": self.value,

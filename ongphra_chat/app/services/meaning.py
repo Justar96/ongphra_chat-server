@@ -3,8 +3,14 @@ from typing import Dict, List, Set, Optional, Any
 import re
 import json
 from datetime import datetime
+import hashlib
+import random
+import time
+import sys
+import os
+# Add the project root to the Python path, not the parent directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from openai import AsyncOpenAI
 from app.domain.bases import Bases, BasesResult
 from app.domain.meaning import Meaning, MeaningCollection, Category, Reading
 from app.repository.category_repository import CategoryRepository
@@ -12,6 +18,268 @@ from app.repository.reading_repository import ReadingRepository
 from app.core.exceptions import MeaningExtractionError
 from app.core.logging import get_logger
 from app.config.settings import get_settings
+from app.services.ai_topic_service import get_ai_topic_service, UserMapping
+
+
+class LRUCache:
+    """
+    Least Recently Used (LRU) cache implementation with size limiting and time-based expiration
+    """
+    
+    def __init__(self, max_size=1000, ttl_seconds=3600):
+        """
+        Initialize the LRU Cache
+        
+        Args:
+            max_size: Maximum number of items in cache
+            ttl_seconds: Time-to-live in seconds for cache items
+        """
+        self.cache = {}
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self.access_order = []  # List to track access order
+    
+    def get(self, key):
+        """Get item from cache, return None if missing or expired"""
+        if key not in self.cache:
+            return None
+            
+        # Check for expiration
+        item = self.cache[key]
+        current_time = time.time()
+        if current_time - item["timestamp"] > self.ttl_seconds:
+            # Remove expired item
+            self._remove_item(key)
+            return None
+            
+        # Update access order
+        self._update_access(key)
+        
+        return item["value"]
+    
+    def set(self, key, value):
+        """Add item to cache, managing size limits"""
+        current_time = time.time()
+        
+        # If key exists, update it
+        if key in self.cache:
+            self.cache[key] = {
+                "value": value,
+                "timestamp": current_time
+            }
+            self._update_access(key)
+            return
+            
+        # If cache is full, remove least recently used item
+        if len(self.cache) >= self.max_size:
+            self._remove_lru()
+            
+        # Add new item
+        self.cache[key] = {
+            "value": value,
+            "timestamp": current_time
+        }
+        self.access_order.append(key)
+    
+    def _update_access(self, key):
+        """Update access order for a key"""
+        if key in self.access_order:
+            self.access_order.remove(key)
+        self.access_order.append(key)
+    
+    def _remove_item(self, key):
+        """Remove an item from cache and access order"""
+        if key in self.cache:
+            del self.cache[key]
+        if key in self.access_order:
+            self.access_order.remove(key)
+    
+    def _remove_lru(self):
+        """Remove least recently used item"""
+        if not self.access_order:
+            return
+            
+        lru_key = self.access_order[0]
+        self._remove_item(lru_key)
+    
+    def clean_expired(self):
+        """Clean up expired items"""
+        current_time = time.time()
+        expired_keys = [
+            key for key, item in self.cache.items()
+            if current_time - item["timestamp"] > self.ttl_seconds
+        ]
+        
+        for key in expired_keys:
+            self._remove_item(key)
+            
+    def size(self):
+        """Get current cache size"""
+        return len(self.cache)
+    
+    def clear(self):
+        """Clear the cache"""
+        self.cache = {}
+        self.access_order = []
+
+
+class MeaningExtractor:
+    """Helper class for extracting meanings from bases and categories"""
+    
+    def __init__(self, category_repository, reading_repository, logger):
+        self.category_repository = category_repository
+        self.reading_repository = reading_repository
+        self.logger = logger
+        
+    async def extract_from_specific_combinations(self, combinations, bases):
+        """Extract meanings from specific category combinations"""
+        meanings = []
+        
+        if not combinations:
+            return meanings
+            
+        # Extract combination IDs
+        combination_ids = [comb['id'] for comb in combinations]
+        
+        # Get readings for these specific combinations
+        specific_readings = await self.reading_repository.get_by_combinations(combination_ids)
+        self.logger.info(f"Found {len(specific_readings)} relevant readings from specific combinations")
+        
+        # Convert specific readings to meanings
+        for reading in specific_readings:
+            try:
+                # Get the combination to determine which bases and positions to use
+                combination = next((c for c in combinations if c['id'] == reading.combination_id), None)
+                
+                if combination:
+                    # Handle both dictionary and object access patterns
+                    category1_id = combination.get('category1_id')
+                    category2_id = combination.get('category2_id')
+                    category3_id = combination.get('category3_id', None)
+                    
+                    if not category1_id or not category2_id:
+                        self.logger.warning(f"Invalid combination data: {combination}")
+                        continue
+                    
+                    # Get the categories in this combination
+                    cat1 = await self.category_repository.get_by_id(category1_id)
+                    cat2 = await self.category_repository.get_by_id(category2_id)
+                    cat3 = None
+                    if category3_id:
+                        cat3 = await self.category_repository.get_by_id(category3_id)
+                    
+                    # Determine base and position from categories
+                    if cat1 and cat2:
+                        meaning = await self._create_meaning_from_categories(cat1, cat2, cat3, bases, reading, 9.0)
+                        if meaning:
+                            meanings.append(meaning)
+            except Exception as inner_e:
+                # Log the error but continue processing other readings
+                self.logger.error(f"Error processing specific reading {reading.id if hasattr(reading, 'id') else 'unknown'}: {str(inner_e)}")
+                continue
+                
+        return meanings
+        
+    async def extract_from_regular_categories(self, category_ids, bases):
+        """Extract meanings from regular categories"""
+        meanings = []
+        
+        if not category_ids:
+            return meanings
+            
+        # Limit regular category IDs to reduce database queries
+        category_ids = list(set(category_ids))[:6]
+        
+        # Get regular readings by category IDs
+        regular_readings = await self.reading_repository.get_by_categories(category_ids)
+        self.logger.info(f"Found {len(regular_readings)} relevant readings from regular categories")
+        
+        # Convert regular readings to meanings
+        for reading in regular_readings:
+            try:
+                # Get the combination to determine which bases and positions to use
+                combination = await self.category_repository.get_combination_by_id(reading.combination_id)
+                if combination:
+                    # Handle both dictionary and object access patterns
+                    category1_id = combination.category1_id if hasattr(combination, 'category1_id') else combination.get('category1_id')
+                    category2_id = combination.category2_id if hasattr(combination, 'category2_id') else combination.get('category2_id')
+                    category3_id = combination.category3_id if hasattr(combination, 'category3_id') else combination.get('category3_id', None)
+                    
+                    if not category1_id or not category2_id:
+                        self.logger.warning(f"Invalid combination data: {combination}")
+                        continue
+                    
+                    # Get the categories in this combination
+                    cat1 = await self.category_repository.get_by_id(category1_id)
+                    cat2 = await self.category_repository.get_by_id(category2_id)
+                    cat3 = None
+                    if category3_id:
+                        cat3 = await self.category_repository.get_by_id(category3_id)
+                    
+                    # Create meaning
+                    meaning = await self._create_meaning_from_categories(cat1, cat2, cat3, bases, reading, 5.0)
+                    if meaning:
+                        meanings.append(meaning)
+            except Exception as inner_e:
+                # Log the error but continue processing other readings
+                self.logger.error(f"Error processing regular reading {reading.id if hasattr(reading, 'id') else 'unknown'}: {str(inner_e)}")
+                continue
+                
+        return meanings
+        
+    async def _create_meaning_from_categories(self, cat1, cat2, cat3, bases, reading, match_score):
+        """Create a meaning object from categories and reading"""
+        if not cat1 or not cat2:
+            return None
+            
+        # Determine base and position from categories
+        base = self._get_base_for_house_number(cat1.house_number)
+        position = self._get_position_for_house_number(cat2.house_number)
+        
+        # Get the value from the corresponding base
+        base_keys = ["base1", "base2", "base3", "base4"]
+        if 1 <= base <= 4 and 1 <= position <= 7:
+            base_key = base_keys[base - 1]
+            base_sequence = getattr(bases, base_key)
+            value = base_sequence[position - 1] if position <= len(base_sequence) else 0
+            
+            # Create meaning
+            return Meaning(
+                base=base,
+                position=position,
+                value=value,
+                heading=reading.heading,
+                meaning=reading.meaning,
+                category=f"{cat1.name}-{cat2.name}" + (f"-{cat3.name}" if cat3 else ""),
+                match_score=match_score
+            )
+        return None
+        
+    def _get_base_for_house_number(self, house_number: int) -> int:
+        """Map house number to base (1-4)"""
+        # Map house numbers to bases
+        # Houses 1-3 -> Base 1
+        # Houses 4-6 -> Base 2
+        # Houses 7-9 -> Base 3
+        # Houses 10-12 -> Base 4
+        if 1 <= house_number <= 3:
+            return 1
+        elif 4 <= house_number <= 6:
+            return 2
+        elif 7 <= house_number <= 9:
+            return 3
+        elif 10 <= house_number <= 12:
+            return 4
+        else:
+            return 1  # Default to base 1
+    
+    def _get_position_for_house_number(self, house_number: int) -> int:
+        """Map house number to position (1-7)"""
+        # Map house numbers to positions within a base
+        # For each base, houses are mapped to positions 1-7
+        # We use modulo to handle the mapping
+        position = ((house_number - 1) % 12) % 7 + 1
+        return position
 
 
 class MeaningService:
@@ -33,6 +301,9 @@ class MeaningService:
         self.reading_repository = reading_repository
         self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
         self.logger.info("Initialized MeaningService")
+        
+        # Initialize extractor helper
+        self.extractor = MeaningExtractor(category_repository, reading_repository, self.logger)
         
         # Initialize Thai position labels from calculator
         try:
@@ -76,48 +347,71 @@ class MeaningService:
         }
         self.logger.debug(f"Initialized category mappings with {len(self.CATEGORY_MAPPINGS)} categories")
         
-        # Initialize OpenAI client
-        settings = get_settings()
-        self.openai_api_key = settings.openai_api_key
-        self.default_model = settings.default_model
-        self.client = AsyncOpenAI(api_key=self.openai_api_key)
-        self.logger.debug(f"Initialized OpenAI client with model {self.default_model}")
+        # Initialize caches with proper sizing
+        self._meaning_cache = LRUCache(max_size=100, ttl_seconds=3600)  # 1 hour TTL
+        self._category_cache = LRUCache(max_size=50, ttl_seconds=86400)  # 24 hour TTL
+        # Initialize AI topic service
+        self.ai_topic_service = get_ai_topic_service()
         
-        # Initialize meaning cache
-        self._meaning_cache = {}
-        # Initialize topic identification cache
-        self._topic_cache = {}
+        # Delegate methods to extractor
+        self._get_base_for_house_number = self.extractor._get_base_for_house_number
+        self._get_position_for_house_number = self.extractor._get_position_for_house_number
     
-    async def identify_topics(self, question: str) -> Set[str]:
-        """Identify relevant topics based on the question"""
+    async def identify_topics(self, question: str, user_mappings: Optional[List[UserMapping]] = None) -> Set[str]:
+        """Identify relevant topics based on the question using AI topic service"""
         if not question: 
             # Default to work and fortune pair
             return {"กัมมะ:ลาภะ"}
             
         self.logger.debug(f"Identifying topics for question: '{question}'")
         
-        # Check cache first
-        if question in self._topic_cache:
-            topics = self._topic_cache[question]
-            self.logger.debug(f"Using cached topics for question: {topics}")
-            return topics
-        
-        # Use AI-based topic identification
         try:
-            ai_topics = await self._identify_topics_with_ai(question)
-            topics = set(ai_topics)
-            self.logger.debug(f"Identified topics with AI: {topics}")
+            # Use AI topic service to detect topics with user mappings
+            topic_result = await self.ai_topic_service.detect_topic(question, user_mappings)
+            
+            # Convert detected topics to category pairs
+            topics = set()
+            
+            # Map general topics to specific category pairs
+            topic_to_category_map = {
+                'การเงิน': [('ธานัง', 'ลาภะ'), ('กดุมภะ', 'โภคา')],
+                'ความรัก': [('ปัตนิ', 'สุภะ')],
+                'สุขภาพ': [('มรณะ', 'ตะนุ')],
+                'การงาน': [('กัมมะ', 'ลาภะ'), ('ทาสา', 'ทาสี')],
+                'การศึกษา': [('สหัชชะ', 'สุภะ')],
+                'ครอบครัว': [('มาตา', 'ปิตา'), ('พันธุ', 'ปุตตะ')],
+                'โชคลาภ': [('ลาภะ', 'สุภะ')],
+                'อนาคต': [('กัมมะ', 'ลาภะ'), ('ธานัง', 'อัตตะ')]
+            }
+            
+            # Add primary topic pairs
+            primary_topic = topic_result.primary_topic
+            if primary_topic in topic_to_category_map:
+                for primary, secondary in topic_to_category_map[primary_topic]:
+                    topics.add(f"{primary}:{secondary}")
+            
+            # Add secondary topic pairs if confidence is high enough
+            if topic_result.confidence >= 5.0:  # Only add secondary topics for high confidence
+                for secondary_topic in topic_result.secondary_topics:
+                    if secondary_topic in topic_to_category_map:
+                        # Add first pair from each secondary topic
+                        primary, secondary = topic_to_category_map[secondary_topic][0]
+                        topics.add(f"{primary}:{secondary}")
+            
+            # Ensure we have at least one topic
+            if not topics:
+                topics.add("กัมมะ:ลาภะ")  # Default pair
+            
+            # Limit to 3 pairs maximum
+            if len(topics) > 3:
+                topics = set(list(topics)[:3])
+            
+            self.logger.info(f"Identified topics: {', '.join(topics)}")
+            return topics
+            
         except Exception as e:
-            # Default to work and fortune pair if AI identification fails
-            self.logger.error(f"AI topic identification failed: {str(e)}")
-            topics = {"กัมมะ:ลาภะ"}
-            self.logger.debug("Using default topics due to AI failure")
-        
-        # Cache the result
-        self._topic_cache[question] = topics
-        
-        self.logger.info(f"Identified topics: {', '.join(topics)}")
-        return topics
+            self.logger.error(f"Error identifying topics: {str(e)}")
+            return {"กัมมะ:ลาภะ"}  # Default to work and fortune pair on error
     
     async def get_category_ids(self, topics: Set[str]) -> List[int]:
         """Get category IDs based on topics"""
@@ -147,172 +441,66 @@ class MeaningService:
     
     def _get_cached_meaning(self, cache_key: str) -> Optional[MeaningCollection]:
         """Get cached meaning if available"""
-        if cache_key in self._meaning_cache:
-            return self._meaning_cache[cache_key]
-        return None
+        return self._meaning_cache.get(cache_key)
     
     def _cache_meaning(self, cache_key: str, meaning: MeaningCollection) -> None:
         """Cache the meaning result"""
-        # Store in cache - only keep up to 100 items
-        if len(self._meaning_cache) >= 100:
-            # Remove oldest item
-            oldest_key = next(iter(self._meaning_cache))
-            del self._meaning_cache[oldest_key]
-            
-        self._meaning_cache[cache_key] = meaning
+        self._meaning_cache.set(cache_key, meaning)
+        
+        # Clean expired items occasionally (1% chance)
+        if random.random() < 0.01:
+            self._meaning_cache.clean_expired()
     
-    async def _identify_topics_with_ai(self, question: str) -> List[str]:
+    async def create_user_mappings(self, bases: Bases) -> List[UserMapping]:
         """
-        Identify topics from the question using AI
+        Create UserMapping objects from calculated bases
         
         Args:
-            question: User's question
+            bases: The calculated bases
             
         Returns:
-            List of identified topics (category pairs)
+            List of UserMapping objects for AI analysis
         """
-        try:
-            # Check cache first
-            if question in self._topic_cache:
-                return list(self._topic_cache[question])
-            
-            self.logger.info(f"Identifying topics with AI for question: '{question}'")
-            
-            # Thai position names from calculator.py
-            thai_positions = {
-                "day_labels": ["อัตตะ", "หินะ", "ธานัง", "ปิตา", "มาตา", "โภคา", "มัชฌิมา"],
-                "month_labels": ["ตะนุ", "กดุมภะ", "สหัชชะ", "พันธุ", "ปุตตะ", "อริ", "ปัตนิ"],
-                "year_labels": ["มรณะ", "สุภะ", "กัมมะ", "ลาภะ", "พยายะ", "ทาสา", "ทาสี"]
-            }
-            
-            # Create a list of available categories with their meanings from CATEGORY_MAPPINGS
-            categories_info = []
-            for category_name, details in self.CATEGORY_MAPPINGS.items():
-                # Only include categories that are in the Thai position names
-                if category_name in thai_positions["day_labels"] or \
-                   category_name in thai_positions["month_labels"] or \
-                   category_name in thai_positions["year_labels"]:
-                    categories_info.append({
-                        "name": category_name,
-                        "thai_meaning": details.get("thai_meaning", ""),
-                        "house_number": details.get("house_number", 0),
-                        "house_type": details.get("house_type", ""),
-                        "base_type": "day_labels" if category_name in thai_positions["day_labels"] else 
-                                    "month_labels" if category_name in thai_positions["month_labels"] else 
-                                    "year_labels"
-                    })
-            
-            # Create the system prompt - explicitly request exactly 3 pairs
-            system_prompt = """
-            คุณเป็นผู้เชี่ยวชาญในการวิเคราะห์คำถามเกี่ยวกับโหราศาสตร์ไทย
-            งานของคุณคือการระบุคู่ของภพที่เกี่ยวข้องกับคำถามของผู้ใช้
-            
-            ให้วิเคราะห์คำถามและระบุ 3 คู่ของภพที่สัมพันธ์กันและเกี่ยวข้องกับคำถาม (ไม่มากกว่าหรือน้อยกว่า 3 คู่)
-            ตอบในรูปแบบ JSON array ของคู่ภพ โดยในแต่ละคู่ประกอบด้วย primary_house และ secondary_house
-            ถ้าไม่มีคู่ภพที่เกี่ยวข้องชัดเจน ให้เลือกภพที่น่าจะเกี่ยวข้องที่สุด 3 คู่
-            
-            เลือกภพตาม "thai_meaning" ที่ตรงกับเนื้อหาของคำถาม
-            โดยควรเลือกภพหลัก (primary_house) จากประเภทหนึ่ง และภพรอง (secondary_house) จากอีกประเภทหนึ่ง
-            เรียงลำดับคู่ภพจากมีความเกี่ยวข้องมากที่สุดไปน้อยที่สุด
-            
-            ตัวอย่างคำตอบ: 
-            [
-              {"primary_house": "กัมมะ", "secondary_house": "ลาภะ"},
-              {"primary_house": "ธานัง", "secondary_house": "อัตตะ"},
-              {"primary_house": "ลาภะ", "secondary_house": "กดุมภะ"}
-            ]
-            """
-            
-            # Create the user prompt
-            user_prompt = f"""
-            คำถามของผู้ใช้: {question}
-            
-            ภพที่มีให้เลือก:
-            {json.dumps(categories_info, ensure_ascii=False, indent=2)}
-            
-            โปรดระบุ 3 คู่ของภพที่เกี่ยวข้องกับคำถามนี้ในรูปแบบ JSON array ของคู่ภพ
-            โดยในแต่ละคู่ประกอบด้วย primary_house และ secondary_house
-            เรียงลำดับจากคู่ที่เกี่ยวข้องมากที่สุดไปหาน้อยที่สุด
-            
-            คำตอบต้องมีทั้งหมด 3 คู่เท่านั้น ไม่มากกว่าหรือน้อยกว่า
-            พยายามเลือกภพจากประเภทที่ต่างกัน เช่น หากเลือก primary_house จาก day_labels 
-            ให้เลือก secondary_house จาก month_labels หรือ year_labels
-            """
-            
-            # Create the messages
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-            
-            # Call the OpenAI API
-            response = await self.client.chat.completions.create(
-                model=self.default_model,
-                messages=messages,
-                temperature=0.3,  # Lower temperature for more deterministic results
-                max_tokens=200
-            )
-            
-            # Extract the response
-            response_text = response.choices[0].message.content.strip()
-            self.logger.debug(f"AI response for topic identification: {response_text}")
-            
-            # Parse the JSON response
-            try:
-                # Try to extract JSON from the response if it's not a clean JSON
-                if not response_text.startswith('['):
-                    match = re.search(r'\[(.*?)\]', response_text, re.DOTALL)
-                    if match:
-                        response_text = f"[{match.group(1)}]"
+        mappings = []
+        
+        # Map day base values to categories
+        for i, category in enumerate(self.day_labels):
+            if isinstance(category, str):  # Ensure it's a string (handle tuple/list issues)
+                mappings.append(UserMapping(
+                    category=category,
+                    value=bases.base1[i],
+                    base_type="day"
+                ))
+        
+        # Map month base values to categories
+        for i, category in enumerate(self.month_labels):
+            if isinstance(category, str):  # Ensure it's a string
+                mappings.append(UserMapping(
+                    category=category,
+                    value=bases.base2[i],
+                    base_type="month"
+                ))
+        
+        # Map year base values to categories
+        for i, category in enumerate(self.year_labels):
+            if isinstance(category, str):  # Ensure it's a string
+                mappings.append(UserMapping(
+                    category=category,
+                    value=bases.base3[i],
+                    base_type="year"
+                ))
+        
+        # Map sum base values to categories (using day labels)
+        for i, category in enumerate(self.day_labels):
+            if isinstance(category, str):  # Ensure it's a string
+                mappings.append(UserMapping(
+                    category=category,
+                    value=bases.base4[i],
+                    base_type="sum"
+                ))
                 
-                house_pairs = json.loads(response_text)
-                
-                # Convert house pairs to topics list
-                topics = []
-                
-                for pair in house_pairs:
-                    primary_house = pair.get("primary_house")
-                    secondary_house = pair.get("secondary_house")
-                    
-                    if primary_house and secondary_house:
-                        if primary_house in self.CATEGORY_MAPPINGS and secondary_house in self.CATEGORY_MAPPINGS:
-                            # Create a topic identifier that represents the pair
-                            topics.append(f"{primary_house}:{secondary_house}")
-                
-                # Ensure we have exactly 3 pairs or use defaults if needed
-                if not topics:
-                    # Use default pairs
-                    topics = ["กัมมะ:ลาภะ", "ธานัง:อัตตะ", "ลาภะ:กดุมภะ"]
-                    self.logger.warning("No valid topics from AI, using default 3 pairs")
-                elif len(topics) < 3:
-                    # Add default pairs to reach 3
-                    defaults = ["กัมมะ:ลาภะ", "ธานัง:อัตตะ", "ลาภะ:กดุมภะ"]
-                    for default_topic in defaults:
-                        if default_topic not in topics and len(topics) < 3:
-                            topics.append(default_topic)
-                    self.logger.warning(f"Only {len(topics)} valid topics from AI, adding defaults to reach 3")
-                elif len(topics) > 3:
-                    # Limit to 3 most relevant pairs
-                    topics = topics[:3]
-                    self.logger.warning(f"Too many topics from AI, limiting to 3 most relevant")
-                
-                # Cache the result
-                self._topic_cache[question] = set(topics)
-                
-                return topics
-            except json.JSONDecodeError:
-                self.logger.error(f"Failed to parse AI response as JSON: {response_text}")
-                # Use 3 default pairs
-                default_topics = ["กัมมะ:ลาภะ", "ธานัง:อัตตะ", "ลาภะ:กดุมภะ"]
-                self._topic_cache[question] = set(default_topics)
-                return default_topics
-                
-        except Exception as e:
-            self.logger.error(f"Error identifying topics with AI: {str(e)}", exc_info=True)
-            # Use 3 default pairs
-            default_topics = ["กัมมะ:ลาภะ", "ธานัง:อัตตะ", "ลาภะ:กดุมภะ"]
-            self._topic_cache[question] = set(default_topics)
-            return default_topics
+        self.logger.info(f"Created {len(mappings)} user mappings for AI analysis")
+        return mappings
     
     async def extract_meanings(self, bases: Bases, question: str) -> MeaningCollection:
         """
@@ -337,9 +525,15 @@ class MeaningService:
                 self.logger.info(f"Using cached meanings for question: '{question}'")
                 return cached_result
             
-            # Identify topics from the question using AI - now returns exactly 3 pairs
-            topics = await self._identify_topics_with_ai(question)
-            self.logger.info(f"Identified topics with AI: {', '.join(topics)}")
+            # Create user mappings for AI analysis
+            user_mappings = await self.create_user_mappings(bases)
+            
+            # Detect topics with user mappings
+            topic_result = await self.ai_topic_service.detect_topic(question, user_mappings)
+            
+            # Identify topics from the question using AI - now with user mappings
+            topics = await self.identify_topics(question, user_mappings)
+            self.logger.info(f"Identified topics: {', '.join(topics)}")
             
             # Parse topics to find specific combinations - process each pair separately
             all_specific_combinations = []
@@ -521,32 +715,6 @@ class MeaningService:
         except Exception as e:
             self.logger.error(f"Error extracting meanings: {str(e)}", exc_info=True)
             raise MeaningExtractionError(f"Error extracting meanings: {str(e)}")
-    
-    def _get_base_for_house_number(self, house_number: int) -> int:
-        """Map house number to base (1-4)"""
-        # Map house numbers to bases
-        # Houses 1-3 -> Base 1
-        # Houses 4-6 -> Base 2
-        # Houses 7-9 -> Base 3
-        # Houses 10-12 -> Base 4
-        if 1 <= house_number <= 3:
-            return 1
-        elif 4 <= house_number <= 6:
-            return 2
-        elif 7 <= house_number <= 9:
-            return 3
-        elif 10 <= house_number <= 12:
-            return 4
-        else:
-            return 1  # Default to base 1
-    
-    def _get_position_for_house_number(self, house_number: int) -> int:
-        """Map house number to position (1-7)"""
-        # Map house numbers to positions within a base
-        # For each base, houses are mapped to positions 1-7
-        # We use modulo to handle the mapping
-        position = ((house_number - 1) % 12) % 7 + 1
-        return position
     
     async def _get_categories_for_topic(self, topic: str) -> List[Category]:
         """
@@ -948,12 +1116,21 @@ class MeaningService:
                 thai_day = bases_result.birth_info.day
                 self.logger.info(f"Thai day not provided, using {thai_day} from calculation")
             
+            # Create user mappings for AI analysis
+            user_mappings = await self.create_user_mappings(bases_result.bases)
+            
             # Enrich bases with category details
             enriched_bases = await self.enrich_bases_with_categories(bases_result)
             
             # Process focus readings if question is provided
             focus_meanings = None
+            mapping_analysis = None
             if question:
+                # Detect topic with user mappings
+                topic_result = await self.ai_topic_service.detect_topic(question, user_mappings=user_mappings)
+                mapping_analysis = topic_result.mapping_analysis
+                
+                # Extract meanings
                 focus_meanings = await self.extract_meanings(bases_result.bases, question)
             
             # Get general readings without question filtering
@@ -1002,7 +1179,8 @@ class MeaningService:
                         "meanings": [m.dict() for m in general_meanings.items if m.base == 4]
                     }
                 },
-                "focus_meanings": [meaning.dict() for meaning in focus_meanings.items] if focus_meanings else []
+                "focus_meanings": [meaning.dict() for meaning in focus_meanings.items] if focus_meanings else [],
+                "mapping_analysis": [m.dict() for m in mapping_analysis] if mapping_analysis else []
             }
             
             # Add a summary of the bases
@@ -1022,3 +1200,32 @@ class MeaningService:
         except Exception as e:
             self.logger.error(f"Error generating enriched birth chart: {str(e)}", exc_info=True)
             raise MeaningExtractionError(f"Error generating enriched birth chart: {str(e)}")
+
+    async def get_category_by_element_name(self, element_name: str) -> Optional[Category]:
+        """Get category by element name, with caching"""
+        if not element_name:
+            return None
+        
+        # Check cache first
+        cached_category = self._category_cache.get(element_name)
+        if cached_category:
+            return cached_category
+        
+        self.logger.debug(f"Looking up category for element name: {element_name}")
+        
+        # First try to find by category_name
+        category = await self.category_repository.get_by_name(element_name)
+        
+        # If not found, try by thai_name
+        if not category:
+            self.logger.debug(f"Category not found by name, trying Thai name: {element_name}")
+            category = await self.category_repository.get_by_thai_name(element_name)
+        
+        if not category:
+            self.logger.warning(f"No category found for element name: {element_name}")
+        else:
+            self.logger.debug(f"Found category: {category.id} - {category.category_name}")
+            # Add to cache
+            self._category_cache.set(element_name, category)
+        
+        return category

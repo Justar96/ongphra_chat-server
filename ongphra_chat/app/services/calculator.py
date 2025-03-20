@@ -6,6 +6,16 @@ from app.domain.birth import BirthInfo
 from app.domain.bases import Bases, BasesResult
 from app.core.exceptions import CalculationError
 from app.core.logging import get_logger
+from app.config.thai_astrology import (
+    ZODIAC_ANIMALS, 
+    ZODIAC_INDEX_TO_ANIMAL,
+    DAY_VALUES, 
+    DAY_INDEX_TO_NAME,
+    DAY_LABELS,
+    MONTH_LABELS,
+    YEAR_LABELS,
+    BASE_TO_HOUSE_MAPPING
+)
 
 class CalculatorService:
     """Service for calculating birth bases using the seven-nine method"""
@@ -14,40 +24,15 @@ class CalculatorService:
         self.logger = get_logger(__name__)
         self.logger.info("Initializing CalculatorService")
         
-        # Thai zodiac years mapping
-        self.zodiac_years = {
-            "ชวด": 1,  # Rat
-            "ฉลู": 2,  # Ox
-            "ขาล": 3,  # Tiger
-            "เถาะ": 4,  # Rabbit
-            "มะโรง": 5,  # Dragon
-            "มะเส็ง": 6,  # Snake
-            "มะเมีย": 7,  # Horse
-            "มะแม": 8,  # Goat
-            "วอก": 9,  # Monkey
-            "ระกา": 10,  # Rooster
-            "จอ": 11,  # Dog
-            "กุน": 12,  # Pig
-        }
-
-        # Day values mapping
-        self.day_values = {
-            "อาทิตย์": 1,  # Sunday
-            "จันทร์": 2,  # Monday
-            "อังคาร": 3,  # Tuesday
-            "พุธ": 4,  # Wednesday
-            "พฤหัสบดี": 5,  # Thursday
-            "ศุกร์": 6,  # Friday
-            "เสาร์": 7,  # Saturday
-        }
-        
-        # Create reverse mapping from day index to Thai day name
-        self.day_names = {v: k for k, v in self.day_values.items()}
+        # Import Thai constants from configuration
+        self.zodiac_years = ZODIAC_ANIMALS
+        self.day_values = DAY_VALUES
+        self.day_names = DAY_INDEX_TO_NAME
         
         # Base labels for formatting output
-        self.day_labels = ["อัตตะ", "หินะ", "ธานัง", "ปิตา", "มาตา", "โภคา", "มัชฌิมา"]
-        self.month_labels = ["ตะนุ", "กดุมภะ", "สหัชชะ", "พันธุ", "ปุตตะ", "อริ", "ปัตนิ"]
-        self.year_labels = ["มรณะ", "สุภะ", "กัมมะ", "ลาภะ", "พยายะ", "ทาสา", "ทาสี"]
+        self.day_labels = DAY_LABELS
+        self.month_labels = MONTH_LABELS
+        self.year_labels = YEAR_LABELS
         
         # Cache for common calculations
         self._zodiac_cache = {}
@@ -61,23 +46,9 @@ class CalculatorService:
         # Calculate Thai zodiac year index
         thai_zodiac_year_index = self.get_thai_zodiac_year_index(birth_year)
         
-        # Map index to zodiac animal
-        zodiac_map = {
-            1: 'ชวด',    # Rat
-            2: 'ฉลู',     # Ox
-            3: 'ขาล',     # Tiger
-            4: 'เถาะ',    # Rabbit
-            5: 'มะโรง',   # Dragon
-            6: 'มะเส็ง',  # Snake
-            7: 'มะเมีย',  # Horse
-            8: 'มะแม',    # Goat
-            9: 'วอก',     # Monkey
-            10: 'ระกา',   # Rooster
-            11: 'จอ',     # Dog
-            12: 'กุน'     # Pig
-        }
+        # Map index to zodiac animal using the config
+        result = ZODIAC_INDEX_TO_ANIMAL.get(thai_zodiac_year_index, 'Unknown')
         
-        result = zodiac_map[thai_zodiac_year_index]
         # Store in cache
         self._zodiac_cache[birth_year] = result
         
