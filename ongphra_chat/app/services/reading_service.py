@@ -141,7 +141,8 @@ class ReadingService:
     @lru_cache(maxsize=1000)
     async def extract_meanings_from_calculator_result(self, calculator_result: BasesResult) -> List[Meaning]:
         """Extract meanings from calculator result with caching"""
-        cache_key = f"{calculator_result.bases}_{calculator_result.thai_day}"
+        # Create a hashable cache key using string representation of important attributes
+        cache_key = f"{str(calculator_result.bases.base1)}_{str(calculator_result.bases.base2)}_{str(calculator_result.bases.base3)}_{str(calculator_result.bases.base4)}_{calculator_result.thai_day}"
         
         if cache_key in self._meanings_cache:
             self.logger.info("Using cached meanings")
@@ -174,6 +175,48 @@ class ReadingService:
         except Exception as e:
             self.logger.error(f"Error extracting meanings: {str(e)}", exc_info=True)
             return []
+
+    def _matches_calculator_result(self, reading: Reading, calculator_result: BasesResult) -> bool:
+        """
+        Check if a reading matches values in the calculator result
+        
+        Args:
+            reading: Reading from database
+            calculator_result: Result from calculator containing bases
+            
+        Returns:
+            True if the reading matches, False otherwise
+        """
+        try:
+            # Get the base and position from the reading
+            base = reading.base
+            position = reading.position
+            
+            # Validate base and position
+            if not base or not position or base < 1 or base > 4 or position < 1 or position > 7:
+                return False
+            
+            # Get the corresponding value from the calculator result
+            base_key = f"base{base}"
+            bases = calculator_result.bases
+            base_values = getattr(bases, base_key, None)
+            
+            if not base_values or position > len(base_values):
+                return False
+            
+            # Get the value at the specified position (0-indexed in calculator result)
+            calculator_value = base_values[position - 1]
+            
+            # Check if the reading's value matches the calculator's value
+            if hasattr(reading, 'value') and reading.value is not None:
+                return reading.value == calculator_value
+            
+            # If reading doesn't have a value attribute, consider it a match
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in _matches_calculator_result: {str(e)}")
+            return False
 
     def _filter_and_rank_meanings(self, meanings: List[Meaning], user_question: Optional[str] = None) -> List[Meaning]:
         """Filter and rank meanings more efficiently"""

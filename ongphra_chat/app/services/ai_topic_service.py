@@ -1,9 +1,11 @@
 from typing import Dict, List, Optional, Any
 import time
 import hashlib
+import json
 from app.core.logging import get_logger
-from app.config.settings import Settings
+from app.config.settings import Settings, get_settings
 from functools import lru_cache
+from openai import AsyncOpenAI
 
 class AITopicService:
     """Service for AI-powered topic detection and analysis"""
@@ -11,21 +13,19 @@ class AITopicService:
     def __init__(self):
         """Initialize the AI topic service"""
         self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
-        self.settings = Settings()
+        self.settings = get_settings()
         self.logger.info("Initialized AITopicService")
         
-        # Topic mappings from your existing code
-        self.topic_mappings = {
-            'การเงิน': ['เงิน', 'ทรัพย์', 'รายได้', 'ธุรกิจ', 'การเงิน', 'เศรษฐกิจ', 'ค้าขาย', 'ลงทุน', 'หุ้น', 'กำไร', 'ขาดทุน'],
-            'ความรัก': ['รัก', 'แฟน', 'คู่ครอง', 'สามี', 'ภรรยา', 'แต่งงาน', 'หมั้น', 'จีบ', 'ความสัมพันธ์', 'คนรัก', 'รักใคร่'],
-            'สุขภาพ': ['สุขภาพ', 'ป่วย', 'โรค', 'หมอ', 'รักษา', 'ผ่าตัด', 'ยา', 'แข็งแรง', 'ร่างกาย', 'จิตใจ', 'การรักษา'],
-            'การงาน': ['งาน', 'อาชีพ', 'เลื่อนตำแหน่ง', 'เงินเดือน', 'หัวหน้า', 'ลูกน้อง', 'บริษัท', 'องค์กร', 'สมัครงาน', 'ตำแหน่ง'],
-            'การศึกษา': ['เรียน', 'สอบ', 'โรงเรียน', 'มหาวิทยาลัย', 'วิชา', 'การศึกษา', 'ปริญญา', 'จบ', 'วิทยาลัย', 'นักเรียน'],
-            'ครอบครัว': ['ครอบครัว', 'พ่อ', 'แม่', 'ลูก', 'พี่', 'น้อง', 'ญาติ', 'บ้าน', 'ครอบครัว', 'ชีวิตครอบครัว'],
-            'โชคลาภ': ['โชค', 'ลาภ', 'หวย', 'ล็อตเตอรี่', 'ถูกรางวัล', 'ดวง', 'โชคลาภ', 'เสี่ยงโชค', 'สลาก'],
-            'อนาคต': ['อนาคต', 'ชะตา', 'ดวงชะตา', 'คำทำนาย', 'โหราศาสตร์', 'ชีวิต', 'ลิขิต', 'เคราะห์'],
-            'การเดินทาง': ['เดินทาง', 'ท่องเที่ยว', 'ต่างประเทศ', 'ต่างถิ่น', 'ทริป', 'ย้ายถิ่นฐาน', 'ย้ายบ้าน', 'ย้ายที่อยู่']
-        }
+        # Standard topic list - used only for fallback and to provide structure
+        self.standard_topics = [
+            'การเงิน', 'ความรัก', 'สุขภาพ', 'การงาน', 'การศึกษา', 
+            'ครอบครัว', 'โชคลาภ', 'อนาคต', 'การเดินทาง'
+        ]
+        
+        # Initialize OpenAI client
+        self.openai_api_key = self.settings.openai_api_key
+        self.default_model = self.settings.default_model
+        self.client = AsyncOpenAI(api_key=self.openai_api_key)
         
         # In-memory cache for topic detection results
         self._topic_cache = {}
@@ -66,7 +66,7 @@ class AITopicService:
     
     async def detect_topic(self, user_message: str) -> Dict[str, Any]:
         """
-        Detect the most relevant topic from a user message
+        Detect the most relevant topic from a user message using AI
         
         Args:
             user_message: The user's message/question
@@ -86,150 +86,107 @@ class AITopicService:
             return cached_result
         
         try:
-            # Convert message to lowercase for matching
-            message_lower = user_message.lower()
+            # Use OpenAI API for topic detection
+            system_prompt = """
+            คุณเป็นผู้เชี่ยวชาญในการวิเคราะห์หัวข้อของคำถามเกี่ยวกับโหราศาสตร์ไทย
+            งานของคุณคือการวิเคราะห์ว่าคำถามของผู้ใช้เกี่ยวข้องกับหัวข้อใดมากที่สุด
             
-            # Enhanced topic detection with weighted keywords and patterns
-            topic_weights = {}
+            ให้วิเคราะห์คำถามและระบุหัวข้อหลักจากรายการต่อไปนี้:
+            - การเงิน (เงิน ทรัพย์ รายได้ ธุรกิจ การเงิน เศรษฐกิจ ค้าขาย ลงทุน หุ้น)
+            - ความรัก (ความสัมพันธ์ คู่ครอง แฟน สามี ภรรยา)
+            - สุขภาพ (ร่างกาย จิตใจ โรค อาการป่วย รักษา)
+            - การงาน (อาชีพ งาน บริษัท ตำแหน่ง เลื่อนตำแหน่ง)
+            - การศึกษา (เรียน สอบ โรงเรียน มหาวิทยาลัย)
+            - ครอบครัว (พ่อ แม่ ลูก ญาติ บ้าน)
+            - โชคลาภ (โชค ลาภ รางวัล หวย ล็อตเตอรี่)
+            - อนาคต (ชะตาชีวิต อนาคต ทำนาย โหราศาสตร์)
+            - การเดินทาง (ท่องเที่ยว ย้ายถิ่น ต่างประเทศ)
             
-            # Get base weights from keyword matches
-            for topic, keywords in self.topic_mappings.items():
-                # Initialize weight for this topic
-                weight = 0
-                matched_keywords = []
-                
-                # Weight keywords by importance and position
-                for keyword in keywords:
-                    # Check for exact matches (higher weight)
-                    if f" {keyword} " in f" {message_lower} ":
-                        weight += 1.5
-                        matched_keywords.append(keyword)
-                    # Check for partial matches at word boundaries
-                    elif keyword in message_lower:
-                        # Check if it's at the beginning or end of message or surrounded by non-Thai characters
-                        if (message_lower.startswith(keyword) or 
-                            message_lower.endswith(keyword) or 
-                            any(f"{keyword}{c}" in message_lower for c in " ,.?!:;") or
-                            any(f"{c}{keyword}" in message_lower for c in " ,.?!:;")):
-                            weight += 1.0
-                            matched_keywords.append(keyword)
-                
-                # Boost based on question patterns specific to each topic
-                topic_patterns = {
-                    'การเงิน': ['จะรวย', 'การเงิน.*เป็นอย่างไร', 'เงิน.*ไหม', 'ธุรกิจ.*ไหม', 'ค้าขาย.*ไหม'],
-                    'ความรัก': ['จะได้แต่งงาน', 'ความรัก.*เป็นอย่างไร', 'แฟน.*ไหม', 'คู่ครอง.*ไหม'],
-                    'สุขภาพ': ['สุขภาพ.*เป็นอย่างไร', 'สุขภาพ.*ไหม', 'ป่วย.*ไหม', 'โรค.*ไหม'],
-                    'การงาน': ['งาน.*เป็นอย่างไร', 'ได้เลื่อนตำแหน่ง.*ไหม', 'เปลี่ยนงาน.*ไหม'],
-                    'โชคลาภ': ['จะมีโชค.*ไหม', 'ถูกหวย.*ไหม', 'เสี่ยงโชค.*ไหม'],
-                    'อนาคต': ['อนาคต.*เป็นอย่างไร', 'ชะตาชีวิต.*อย่างไร', 'ชีวิต.*ไหม']
-                }
-                
-                if topic in topic_patterns:
-                    for pattern in topic_patterns[topic]:
-                        import re
-                        if re.search(pattern, message_lower):
-                            weight += 2.0  # Large boost for question pattern matches
-                            self.logger.debug(f"Pattern match for '{topic}': {pattern}")
-                
-                # Assign final weight only if there are matches
-                if weight > 0:
-                    topic_weights[topic] = {
-                        'weight': weight,
-                        'matched_keywords': matched_keywords,
-                        'keyword_count': len(matched_keywords),
-                        'total_keywords': len(keywords)
-                    }
+            ตอบในรูปแบบ JSON ที่มีโครงสร้างดังนี้:
+            {
+              "primary_topic": "หัวข้อหลัก",
+              "confidence": [คะแนนความมั่นใจ 1-10],
+              "reasoning": "เหตุผลว่าทำไมเลือกหัวข้อนี้",
+              "secondary_topics": ["หัวข้อรอง1", "หัวข้อรอง2"]
+            }
             
-            # If no topics were found, use context analysis to determine most likely topic
-            if not topic_weights:
-                # Context words that might indicate topic domains without explicit keywords
-                context_indicators = {
-                    'การเงิน': ['จ่าย', 'ซื้อ', 'ขาย', 'ตังค์', 'เงินเดือน', 'หนี้', 'ขายของ', 'ตลาด'],
-                    'ความรัก': ['ชอบ', 'รัก', 'คนรู้ใจ', 'ผูกพัน', 'อกหัก', 'จริงใจ', 'เข้ากันได้'],
-                    'สุขภาพ': ['เจ็บ', 'ปวด', 'อ่อนแรง', 'เหนื่อย', 'นอน', 'พักผ่อน', 'ตรวจ', 'หมอ'],
-                    'การงาน': ['ทำงาน', 'บริษัท', 'หัวหน้า', 'เพื่อนร่วมงาน', 'ออฟฟิศ', 'ประชุม'],
-                    'อนาคต': ['ชีวิต', 'ดวง', 'ชะตา', 'ทำนาย', 'หมอดู', 'แนวทาง', 'ข้างหน้า']
-                }
-                
-                for topic, indicators in context_indicators.items():
-                    matches = sum(1 for word in indicators if word in message_lower)
-                    if matches > 0:
-                        topic_weights[topic] = {
-                            'weight': matches * 0.5,  # Lower weight for context indicators
-                            'matched_keywords': [],
-                            'keyword_count': matches,
-                            'total_keywords': len(indicators)
-                        }
+            โปรดตอบเฉพาะ JSON เท่านั้น ไม่ต้องอธิบายเพิ่มเติม
+            """
             
-            # Sort topics by weight
-            sorted_topics = sorted(
-                topic_weights.items(), 
-                key=lambda x: x[1]['weight'], 
-                reverse=True
+            user_prompt = f"วิเคราะห์หัวข้อของคำถามต่อไปนี้: {user_message}"
+            
+            # Call the OpenAI API
+            response = await self.client.chat.completions.create(
+                model=self.default_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,  # Lower temperature for more deterministic results
+                max_tokens=300
             )
             
-            # Default fallback topic with small confidence if nothing is found
-            if not sorted_topics:
-                primary_topic = 'อนาคต'  # Default fallback
-                confidence = 1.0
-                reasoning = "ไม่พบคำสำคัญที่เกี่ยวข้องกับหัวข้อเฉพาะ ใช้การทำนายแบบทั่วไป"
-                secondary_topics = []
-            else:
-                # Get primary topic and calculate confidence
-                primary_topic, topic_data = sorted_topics[0]
-                
-                # Calculate confidence score (0-10)
-                raw_confidence = min(10.0, topic_data['weight'])
-                
-                # Adjust confidence based on matched keyword percentage
-                if topic_data['total_keywords'] > 0:
-                    keyword_ratio = topic_data['keyword_count'] / topic_data['total_keywords']
-                    confidence = raw_confidence * (0.5 + 0.5 * keyword_ratio)  # Balance between raw score and ratio
-                else:
-                    confidence = raw_confidence
-                
-                # Round to 2 decimal places for readability
-                confidence = round(confidence, 2)
-                
-                # Get secondary topics (topics with at least 40% of the primary topic's weight)
-                threshold = topic_data['weight'] * 0.4
-                secondary_topics = [
-                    topic for topic, data in sorted_topics[1:]
-                    if data['weight'] >= threshold
-                ]
-                
-                # Generate reasoning
-                matched_words = ", ".join(topic_data['matched_keywords'][:3])  # Show up to 3 matched words
-                if matched_words:
-                    reasoning = f"คำถามของคุณเกี่ยวข้องกับ{primary_topic} (พบคำสำคัญ: {matched_words})"
-                else:
-                    reasoning = f"คำถามของคุณน่าจะเกี่ยวข้องกับ{primary_topic}"
-                
-                if secondary_topics:
-                    secondary_topics_str = ", ".join(secondary_topics)
-                    reasoning += f" และอาจเกี่ยวข้องกับ {secondary_topics_str}"
+            # Extract the response
+            response_text = response.choices[0].message.content.strip()
+            self.logger.debug(f"AI response for topic detection: {response_text}")
             
-            result = {
-                "primary_topic": primary_topic,
-                "confidence": confidence,
-                "reasoning": reasoning,
-                "secondary_topics": secondary_topics
-            }
-            
-            # Cache the result
-            self._cache_topic(user_message, result)
-            
-            self.logger.info(f"Detected topic: {primary_topic} with confidence {confidence:.2f}")
-            return result
-            
+            # Parse the JSON response
+            try:
+                result = json.loads(response_text)
+                
+                # Validate result structure and ensure all required fields are present
+                if not all(key in result for key in ["primary_topic", "confidence", "reasoning", "secondary_topics"]):
+                    raise ValueError("Missing required fields in AI response")
+                
+                # Ensure primary_topic is in standard topics list, otherwise use "อนาคต" as fallback
+                if result["primary_topic"] not in self.standard_topics:
+                    self.logger.warning(f"AI returned non-standard topic '{result['primary_topic']}', using fallback")
+                    # Try to map to the closest standard topic or use "อนาคต" as default
+                    result["primary_topic"] = "อนาคต"
+                
+                # Ensure confidence is a number between 1-10
+                try:
+                    result["confidence"] = float(result["confidence"])
+                    result["confidence"] = max(1.0, min(10.0, result["confidence"]))
+                except (ValueError, TypeError):
+                    result["confidence"] = 5.0  # Default confidence if invalid
+                
+                # Filter secondary topics to standard list
+                result["secondary_topics"] = [topic for topic in result.get("secondary_topics", []) 
+                                             if topic in self.standard_topics and topic != result["primary_topic"]]
+                
+                # Limit to top 2 secondary topics
+                result["secondary_topics"] = result["secondary_topics"][:2]
+                
+                # Cache the validated result
+                self._cache_topic(user_message, result)
+                
+                self.logger.info(f"AI detected topic: {result['primary_topic']} with confidence {result['confidence']}")
+                return result
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                self.logger.error(f"Failed to parse AI response: {str(e)}")
+                # Fallback logic
+                fallback_result = {
+                    "primary_topic": "อนาคต",  # Default fallback topic
+                    "confidence": 3.0,
+                    "reasoning": "ไม่สามารถวิเคราะห์หัวข้อได้จากการตอบของ AI ใช้หัวข้อทั่วไปแทน",
+                    "secondary_topics": []
+                }
+                self._cache_topic(user_message, fallback_result)
+                return fallback_result
+                
         except Exception as e:
-            self.logger.error(f"Error detecting topic: {str(e)}", exc_info=True)
-            return {
-                "primary_topic": "อนาคต",  # Default fallback
+            self.logger.error(f"Error in AI topic detection: {str(e)}", exc_info=True)
+            # Fallback when AI fails completely
+            fallback_result = {
+                "primary_topic": "อนาคต",  # Default fallback topic
                 "confidence": 1.0,
-                "reasoning": "ไม่สามารถวิเคราะห์หัวข้อได้ ใช้การทำนายทั่วไป",
+                "reasoning": "เกิดข้อผิดพลาดในการวิเคราะห์หัวข้อ ใช้หัวข้อทั่วไปแทน",
                 "secondary_topics": []
             }
+            self._cache_topic(user_message, fallback_result)
+            return fallback_result
     
     async def record_topic_feedback(
         self, 
