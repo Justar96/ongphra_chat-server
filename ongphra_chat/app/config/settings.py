@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, Union, List
 import logging
 from dotenv import load_dotenv
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, AnyHttpUrl
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -21,31 +21,36 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # API settings
-    openai_api_key: str = Field(default=os.getenv("OPENAI_API_KEY", ""), env="OPENAI_API_KEY")
-    default_model: str = Field(default=os.getenv("DEFAULT_MODEL", "gpt-4o-mini"), env="DEFAULT_MODEL")
+    api_name: str = "Thai Fortune API"
+    api_version: str = "1.0.0"
+    openai_api_key: str = Field(default="")
+    default_model: str = Field(default="gpt-4o-mini")
     
     # OpenAI API settings
-    openai_api_base: str = Field(default=os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1"), env="OPENAI_API_BASE")
-    openai_model: str = Field(default=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), env="OPENAI_MODEL")
-    enable_ai_readings: bool = Field(default=os.getenv("ENABLE_AI_READINGS", "true").lower() == "true", env="ENABLE_AI_READINGS")
-    ai_reading_max_tokens: int = Field(default=int(os.getenv("AI_READING_MAX_TOKENS", "1000")), env="AI_READING_MAX_TOKENS")
-    ai_reading_temperature: float = Field(default=float(os.getenv("AI_READING_TEMPERATURE", "0.7")), env="AI_READING_TEMPERATURE")
+    openai_api_base: str = Field(default="https://api.openai.com/v1")
+    openai_model: str = Field(default="gpt-4o-mini")
+    enable_ai_readings: bool = Field(default=True)
+    ai_reading_max_tokens: int = Field(default=1000)
+    ai_reading_temperature: float = Field(default=0.7)
+    openai_max_tokens: int = Field(default=1000)
+    openai_temperature: float = Field(default=0.7)
+    openai_system_prompt: str = Field(default="")
     
     # AI Model Configuration
-    ai_topic_model: str = Field(default=os.getenv("AI_TOPIC_MODEL", "thai-topic-v1"), env="AI_TOPIC_MODEL")
-    ai_topic_confidence_threshold: float = Field(default=float(os.getenv("AI_TOPIC_CONFIDENCE_THRESHOLD", "0.6")), env="AI_TOPIC_CONFIDENCE_THRESHOLD")
-    ai_sentiment_model: str = Field(default=os.getenv("AI_SENTIMENT_MODEL", "thai-sentiment-v1"), env="AI_SENTIMENT_MODEL")
+    ai_topic_model: str = Field(default="thai-topic-v1")
+    ai_topic_confidence_threshold: float = Field(default=0.6)
+    ai_sentiment_model: str = Field(default="thai-sentiment-v1")
     
     # Redis settings
-    redis_enabled: bool = Field(default=os.getenv("REDIS_ENABLED", "true").lower() == "true", env="REDIS_ENABLED")
-    redis_host: str = Field(default=os.getenv("REDIS_HOST", "localhost"), env="REDIS_HOST")
-    redis_port: int = Field(default=int(os.getenv("REDIS_PORT", "6379")), env="REDIS_PORT")
-    redis_db: int = Field(default=int(os.getenv("REDIS_DB", "0")), env="REDIS_DB")
-    redis_password: Optional[str] = Field(default=os.getenv("REDIS_PASSWORD"), env="REDIS_PASSWORD")
-    redis_ssl: bool = Field(default=os.getenv("REDIS_SSL", "false").lower() == "true", env="REDIS_SSL")
-    redis_timeout: int = Field(default=int(os.getenv("REDIS_TIMEOUT", "5")), env="REDIS_TIMEOUT")
-    redis_retry_interval: int = Field(default=int(os.getenv("REDIS_RETRY_INTERVAL", "300")), env="REDIS_RETRY_INTERVAL")
-    redis_max_retries: int = Field(default=int(os.getenv("REDIS_MAX_RETRIES", "3")), env="REDIS_MAX_RETRIES")
+    redis_enabled: bool = Field(default=True)
+    redis_host: str = Field(default="localhost")
+    redis_port: int = Field(default=6379)
+    redis_db: int = Field(default=0)
+    redis_password: Optional[str] = Field(default=None)
+    redis_ssl: bool = Field(default=False)
+    redis_timeout: int = Field(default=5)
+    redis_retry_interval: int = Field(default=300)
+    redis_max_retries: int = Field(default=3)
     
     @property
     def redis_url(self) -> str:
@@ -58,12 +63,12 @@ class Settings(BaseSettings):
         return f"{protocol}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
     
     # App settings
-    debug: bool = Field(default=os.getenv("DEBUG", "false").lower() == "true", env="DEBUG")
-    log_level: str = Field(default=os.getenv("LOG_LEVEL", "INFO"), env="LOG_LEVEL")
-    environment: str = Field(default=os.getenv("ENVIRONMENT", "development"), env="ENVIRONMENT")
+    debug: bool = Field(default=True)
+    log_level: str = Field(default="INFO")
+    environment: str = Field(default="development")
     
     # CORS settings
-    cors_origins: Union[str, List[str]] = Field(default=os.getenv("CORS_ORIGINS", "*"), env="CORS_ORIGINS")
+    cors_origins: List[str] = Field(default=["*"])
     
     # Paths
     base_dir: Path = Path(__file__).parent.parent.parent
@@ -72,27 +77,28 @@ class Settings(BaseSettings):
     readings_path: Optional[Union[str, Path]] = Field(None)
     
     # Cache settings
-    enable_cache: bool = Field(default=os.getenv("ENABLE_CACHE", "true").lower() == "true", env="ENABLE_CACHE")
-    cache_ttl: int = Field(default=int(os.getenv("CACHE_TTL", "3600")), env="CACHE_TTL")
+    enable_cache: bool = Field(default=True)
+    cache_ttl: int = Field(default=3600)
     
     # API rate limits
-    rate_limit_per_minute: int = Field(default=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")), env="RATE_LIMIT_PER_MINUTE")
+    rate_limit_per_minute: int = Field(default=60)
     
     # Customization
-    default_language: str = Field(default=os.getenv("DEFAULT_LANGUAGE", "thai"), env="DEFAULT_LANGUAGE")
+    default_language: str = Field(default="thai")
     
     # Server settings
-    host: str = Field(default=os.getenv("HOST", "0.0.0.0"), env="HOST")
-    port: int = Field(default=int(os.getenv("PORT", "8000")), env="PORT")
+    host: str = Field(default="0.0.0.0")
+    port: int = Field(default=8000)
     
     # Database settings
-    db_host: str = Field(default=os.getenv("DB_HOST", "localhost"), env="DB_HOST")
-    db_port: int = Field(default=int(os.getenv("DB_PORT", "3306")), env="DB_PORT")
-    db_name: str = Field(default=os.getenv("DB_NAME", "gpt_log"), env="DB_NAME")
-    db_user: str = Field(default=os.getenv("DB_USER", "admin_gpt_chat"), env="DB_USER")
-    db_password: str = Field(default=os.getenv("DB_PASSWORD", "password"), env="DB_PASSWORD")
-    db_pool_min_size: int = Field(default=int(os.getenv("DB_POOL_MIN_SIZE", "5")), env="DB_POOL_MIN_SIZE")
-    db_pool_max_size: int = Field(default=int(os.getenv("DB_POOL_MAX_SIZE", "20")), env="DB_POOL_MAX_SIZE")
+    db_host: str = Field(default="localhost")
+    db_port: int = Field(default=3306)
+    db_name: str = Field(default="gpt_log")
+    db_user: str = Field(default="admin_gpt_chat")
+    db_password: str = Field(default="password")
+    db_pool_min_size: int = Field(default=5)
+    db_pool_max_size: int = Field(default=20)
+    database_url: str = Field(default="sqlite:///./chat_history.db")
     
     model_config = {
         "env_file": str(ENV_PATH),
@@ -136,16 +142,34 @@ class Settings(BaseSettings):
             logger.warning("No OpenAI API key found in environment")
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """
-    Get application settings as a singleton
-    Uses lru_cache to create only one instance
+    Get application settings. This function is cached to avoid
+    loading settings on each call.
     """
     try:
-        settings = Settings()
+        settings = Settings(
+            # Override with environment variables
+            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            openai_model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+            debug=os.environ.get("DEBUG", "False").lower() in ["true", "1", "t"],
+            host=os.environ.get("HOST", "0.0.0.0"),
+            port=int(os.environ.get("PORT", "8000")),
+            log_level=os.environ.get("LOG_LEVEL", "INFO"),
+            
+            # Database settings
+            db_host=os.environ.get("DB_HOST", "localhost"),
+            db_port=int(os.environ.get("DB_PORT", "3306")),
+            db_name=os.environ.get("DB_NAME", "gpt_log"),
+            db_user=os.environ.get("DB_USER", "admin_gpt_chat"),
+            db_password=os.environ.get("DB_PASSWORD", "password"),
+            db_pool_min_size=int(os.environ.get("DB_POOL_MIN_SIZE", "5")),
+            db_pool_max_size=int(os.environ.get("DB_POOL_MAX_SIZE", "20")),
+        )
         logger.info(f"Settings loaded from {ENV_PATH}")
         return settings
     except Exception as e:
-        logger.error(f"Error loading settings: {str(e)}")
-        raise
+        logger.error(f"Error loading settings: {e}")
+        # Even if there's an error, we need to return settings
+        return Settings()

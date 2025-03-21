@@ -1,0 +1,1 @@
+"""Routers for the Thai Fortune API""" 
