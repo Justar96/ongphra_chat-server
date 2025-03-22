@@ -7,7 +7,7 @@ import logging
 from fastapi import Depends
 import json
 
-from app.models.database import ChatSession, ChatMessage
+from app.models.database import ChatSession, ChatMessage, FortuneCalculation
 from app.config.database import get_db
 
 # Configure logging
@@ -262,6 +262,131 @@ class ChatService:
         except Exception as e:
             logger.error(f"Error getting conversation history: {str(e)}")
             return []
+    
+    def store_fortune_calculation(self, session_id: str, user_id: str, birthdate: str, 
+                                  fortune_result: Dict[str, Any]) -> FortuneCalculation:
+        """Store a fortune calculation result"""
+        try:
+            # Extract base values
+            base1 = fortune_result.get("base1", {})
+            base2 = fortune_result.get("base2", {})
+            base3 = fortune_result.get("base3", {})
+            
+            # Create the fortune calculation record
+            fortune_calc = FortuneCalculation(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                user_id=user_id,
+                birthdate=birthdate,
+                base1=json.dumps(base1),
+                base2=json.dumps(base2),
+                base3=json.dumps(base3),
+                result_json=json.dumps(fortune_result)
+            )
+            
+            self.db.add(fortune_calc)
+            self.db.commit()
+            self.db.refresh(fortune_calc)
+            
+            # Also add a message marking this as a fortune calculation
+            self.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                role="system",
+                content=f"Fortune calculation performed for birthdate: {birthdate}",
+                is_fortune=True
+            )
+            
+            return fortune_calc
+        except Exception as e:
+            logger.error(f"Error storing fortune calculation: {str(e)}")
+            self.db.rollback()
+            raise
+    
+    async def store_fortune_calculation_async(self, session_id: str, user_id: str, birthdate: str, 
+                                       fortune_result: Dict[str, Any]) -> FortuneCalculation:
+        """Store a fortune calculation result asynchronously"""
+        try:
+            # Extract base values
+            base1 = fortune_result.get("base1", {})
+            base2 = fortune_result.get("base2", {})
+            base3 = fortune_result.get("base3", {})
+            
+            # Create the fortune calculation record
+            fortune_calc = FortuneCalculation(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                user_id=user_id,
+                birthdate=birthdate,
+                base1=json.dumps(base1),
+                base2=json.dumps(base2),
+                base3=json.dumps(base3),
+                result_json=json.dumps(fortune_result)
+            )
+            
+            self.db.add(fortune_calc)
+            self.db.commit()
+            self.db.refresh(fortune_calc)
+            
+            # Also add a message marking this as a fortune calculation
+            await self.add_message_async(
+                session_id=session_id,
+                user_id=user_id,
+                role="system",
+                content=f"Fortune calculation performed for birthdate: {birthdate}",
+                is_fortune=True
+            )
+            
+            return fortune_calc
+        except Exception as e:
+            logger.error(f"Error storing fortune calculation: {str(e)}")
+            self.db.rollback()
+            raise
+    
+    def get_fortune_calculation(self, session_id: str) -> Optional[FortuneCalculation]:
+        """Get the most recent fortune calculation for a session"""
+        try:
+            return (
+                self.db.query(FortuneCalculation)
+                .filter(FortuneCalculation.session_id == session_id)
+                .order_by(desc(FortuneCalculation.created_at))
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting fortune calculation: {str(e)}")
+            return None
+    
+    def get_fortune_calculation_by_user(self, user_id: str) -> Optional[FortuneCalculation]:
+        """Get the most recent fortune calculation for a user"""
+        try:
+            return (
+                self.db.query(FortuneCalculation)
+                .filter(FortuneCalculation.user_id == user_id)
+                .order_by(desc(FortuneCalculation.created_at))
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting fortune calculation: {str(e)}")
+            return None
+    
+    def get_category_value(self, session_id: str, category_name: str) -> Optional[int]:
+        """Get the value for a specific fortune category for a session"""
+        fortune_calc = self.get_fortune_calculation(session_id)
+        if not fortune_calc:
+            return None
+        
+        return fortune_calc.get_category_value(category_name)
+    
+    def get_fortune_json(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get the full fortune calculation JSON for a session"""
+        fortune_calc = self.get_fortune_calculation(session_id)
+        if not fortune_calc or not fortune_calc.result_json:
+            return None
+        
+        try:
+            return json.loads(fortune_calc.result_json)
+        except:
+            return None
 
 # Dependency to get chat service
 def get_chat_service(db: Session = Depends(get_db)):

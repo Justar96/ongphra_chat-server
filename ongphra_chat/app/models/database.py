@@ -20,6 +20,9 @@ class ChatSession(Base):
     # Define relationship to messages - this is the main relationship
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     
+    # Add relationship to fortune calculations
+    fortune_calculations = relationship("FortuneCalculation", back_populates="session", cascade="all, delete-orphan")
+    
     def to_dict(self):
         """Convert session to dictionary."""
         return {
@@ -89,6 +92,65 @@ class ChatMessage(Base):
             "role": self.role,
             "content": self.content
         }
+
+class FortuneCalculation(Base):
+    """Model for storing fortune calculation results."""
+    __tablename__ = "fortune_calculations"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String(36), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    birthdate = Column(String(10), nullable=False)  # Format: YYYY-MM-DD
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Store the base values individually for quick access
+    base1 = Column(Text, nullable=True)  # JSON string of base1 categories and values
+    base2 = Column(Text, nullable=True)  # JSON string of base2 categories and values
+    base3 = Column(Text, nullable=True)  # JSON string of base3 categories and values
+    
+    # Store the full calculation result
+    result_json = Column(Text, nullable=True)  # Complete fortune calculation as JSON string
+    
+    # Define relationship back to session
+    session = relationship("ChatSession", back_populates="fortune_calculations")
+    
+    def to_dict(self):
+        """Convert fortune calculation to dictionary."""
+        import json
+        
+        # Parse JSON strings to dictionaries
+        base1_dict = json.loads(self.base1) if self.base1 else {}
+        base2_dict = json.loads(self.base2) if self.base2 else {}
+        base3_dict = json.loads(self.base3) if self.base3 else {}
+        full_result = json.loads(self.result_json) if self.result_json else {}
+        
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+            "birthdate": self.birthdate,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "base1": base1_dict,
+            "base2": base2_dict,
+            "base3": base3_dict,
+            "full_result": full_result
+        }
+    
+    def get_category_value(self, category_name):
+        """Get the value for a specific category."""
+        import json
+        
+        # Check each base for the category
+        for base_str in [self.base1, self.base2, self.base3]:
+            if not base_str:
+                continue
+                
+            base_dict = json.loads(base_str)
+            if category_name in base_dict:
+                return base_dict[category_name]
+                
+        return None
 
 # Database connection
 def get_engine(connection_string):

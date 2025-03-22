@@ -11,148 +11,181 @@ from app.models.schemas import (
     FortuneExplanation, FortuneExplanationResponse,
     ChatCompletion, ChatChoice
 )
-from app.utils.openai_client import OpenAIClient
-from app.utils.fortune_tool import calculate_7n9b_fortune
+from app.utils.openai_client import OpenAIClient, get_openai_client
+from app.utils.fortune_calculator import calculate_fortune
+from app.utils.fortune_interpreter import FortuneInterpreter, get_fortune_interpreter
+from app.services.chat_service import ChatService, get_chat_service
 
 router = APIRouter(tags=["fortune"])
 logger = logging.getLogger(__name__)
 
-# Dependency to get OpenAI client
-async def get_openai_client():
-    client = OpenAIClient()
-    try:
-        yield client
-    finally:
-        await client.close()
-
-@router.post("/chat", response_model=ChatResponse, summary="Chat with AI assistant")
-async def chat(
-    request: ChatRequest,
-    openai_client: OpenAIClient = Depends(get_openai_client)
-):
-    """Chat with the AI assistant with optional streaming for Thai conversation and fortune telling."""
-    try:
-        # Convert Pydantic Message objects to dict for OpenAI API
-        messages = [msg.to_dict() for msg in request.messages]
-        
-        # Generate user_id and session_id if not provided
-        user_id = request.user_id or str(uuid.uuid4())
-        session_id = request.session_id or str(uuid.uuid4())
-            
-        if request.stream:
-            return openai_client.create_streaming_response(messages)
-        else:
-            # Get OpenAI response
-            openai_response = await openai_client.chat_completion(messages)
-            
-            # Convert to ChatCompletion model
-            chat_completion = ChatCompletion(
-                id=openai_response["id"],
-                created=openai_response["created"],
-                model=openai_response["model"],
-                choices=[
-                    ChatChoice(
-                        index=i,
-                        message=choice["message"],
-                        finish_reason=choice["finish_reason"]
-                    )
-                    for i, choice in enumerate(openai_response["choices"])
-                ],
-                usage=openai_response.get("usage", None)
-            )
-            
-            # Create response
-            return ChatResponse(
-                status=ResponseStatus(success=True),
-                message_id=str(uuid.uuid4()),
-                response=chat_completion,
-                user_id=user_id,
-                session_id=session_id
-            )
-    except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing chat request: {str(e)}")
-
-@router.post("/fortune", response_model=FortuneResponse, summary="Calculate Thai Fortune")
-async def calculate_fortune(
+@router.post("/fortune", response_model=FortuneResponse, summary="Calculate fortune based on birthdate")
+async def calculate_fortune_endpoint(
     request: FortuneRequest,
-    openai_client: OpenAIClient = Depends(get_openai_client)
+    chat_service: ChatService = Depends(get_chat_service)
 ):
-    """Calculate Thai fortune (7N9B) based on birthdate."""
+    """
+    Calculate a fortune based on birthdate using Thai 7-base-9 numerology.
+    
+    The calculation is based on traditional Thai fortune telling techniques and includes:
+    - Base 1: Day of birth values
+    - Base 2: Month of birth values
+    - Base 3: Year of birth values
+    - Base 4: Combined values
+    
+    The result includes raw values and various interpretations of their meaning.
+    """
     try:
-        # Use the fortune calculation tool directly
-        fortune_data = calculate_7n9b_fortune(request.birthdate)
+        # Calculate the fortune
+        fortune_data = calculate_fortune(request.birthdate)
         
-        # Extract data from the result
-        bases = fortune_data["bases"]
-        individual_interpretations = [
-            IndividualInterpretation(
-                category=item["category"],
-                meaning=item["meaning"],
-                influence=item["influence"],
-                value=item["value"],
-                heading=item["heading"],
-                detail=item["detail"]
-            ) for item in fortune_data["individual_interpretations"]
-        ]
+        # Store the fortune calculation if session is provided
+        if request.session_id and request.user_id:
+            # Store calculation in database
+            await chat_service.store_fortune_calculation_async(
+                session_id=request.session_id,
+                user_id=request.user_id,
+                birthdate=request.birthdate,
+                fortune_result=fortune_data
+            )
         
-        combination_interpretations = [
-            CombinationInterpretation(
-                category=item["category"],
-                heading=item["heading"],
-                meaning=item["meaning"],
-                influence=item["influence"]
-            ) for item in fortune_data["combination_interpretations"]
-        ]
-        
-        # Create the result object
+        # Convert to FortuneResult model
         result = FortuneResult(
-            bases=bases,
-            individual_interpretations=individual_interpretations,
-            combination_interpretations=combination_interpretations,
-            summary=fortune_data["summary"]
+            bases=fortune_data,
+            user_id=request.user_id or str(uuid.uuid4()),
+            request_id=str(uuid.uuid4()),
+            timestamp=int(__import__('time').time())
         )
         
-        # Create the response
-        user_id = request.user_id or str(uuid.uuid4())
+        # Build the response
         response = FortuneResponse(
             status=ResponseStatus(success=True),
-            user_id=user_id,
-            request_id=str(uuid.uuid4()),
             result=result
         )
         
         return response
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400, 
-            detail={"status": {"success": False, "message": str(e), "error_code": 400}}
-        )
+        
     except Exception as e:
         logger.error(f"Error calculating fortune: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail={"status": {"success": False, "message": f"Error calculating fortune: {str(e)}", "error_code": 500}}
-        )
+        raise HTTPException(status_code=400, detail=f"Error calculating fortune: {str(e)}")
 
-@router.get("/fortune/explanation", response_model=FortuneExplanationResponse, summary="Get Fortune System Explanation")
-async def get_fortune_explanation():
-    """Get an explanation of the Thai fortune (7N9B) system."""
-    explanation = FortuneExplanation(
-        system_name="เลข 7 ฐาน 9 (7N9B)",
-        description="เลข 7 ฐาน 9 คือศาสตร์การทำนายโชคชะตาโบราณของไทย โดยใช้วันเกิดคำนวณตัวเลขและความหมายต่างๆ",
-        bases={
-            "base1": "เกี่ยวกับวันเกิด - อัตตะ, หินะ, ธานัง, ปิตา, มาตา, โภคา, มัชฌิมา",
-            "base2": "เกี่ยวกับเดือนเกิด - ตะนุ, กดุมภะ, สหัชชะ, พันธุ, ปุตตะ, อริ, ปัตนิ",
-            "base3": "เกี่ยวกับปีเกิด - มรณะ, สุภะ, กัมมะ, ลาภะ, พยายะ, ทาสา, ทาสี",
-            "base4": "ผลรวมของฐาน 1-3"
-        },
-        interpretation="ตัวเลขที่สูงในแต่ละฐานแสดงถึงอิทธิพลที่มีผลต่อชีวิตในด้านนั้นๆ"
-    )
-    
-    response = FortuneExplanationResponse(
-        status=ResponseStatus(success=True),
-        data=explanation
-    )
-    
-    return response
+@router.post("/fortune/narrative", response_model=ApiResponse, summary="Generate narrative fortune interpretation")
+async def generate_fortune_narrative(
+    request: FortuneRequest,
+    fortune_interpreter: FortuneInterpreter = Depends(get_fortune_interpreter),
+    chat_service: ChatService = Depends(get_chat_service)
+):
+    """
+    Generate a narrative interpretation of the fortune calculation using AI.
+    This provides a more natural, conversational response based on the raw data.
+    """
+    try:
+        # First calculate the fortune
+        fortune_data = calculate_fortune(request.birthdate)
+        
+        # Generate the narrative interpretation
+        language = request.language if hasattr(request, 'language') else "thai"
+        narrative = await fortune_interpreter.generate_interpretation(
+            fortune_data=fortune_data,
+            language=language,
+            birthdate=request.birthdate
+        )
+        
+        # Store the fortune calculation if session is provided
+        if request.session_id and request.user_id:
+            # Store calculation in database
+            await chat_service.store_fortune_calculation_async(
+                session_id=request.session_id,
+                user_id=request.user_id,
+                birthdate=request.birthdate,
+                fortune_result=fortune_data
+            )
+            
+            # Also store the narrative as an assistant message
+            await chat_service.add_message_async(
+                session_id=request.session_id,
+                user_id=request.user_id,
+                role="assistant",
+                content=narrative,
+                is_fortune=True
+            )
+        
+        # Create the response
+        user_id = request.user_id or str(uuid.uuid4())
+        response = ApiResponse(
+            status=ResponseStatus(success=True),
+            user_id=user_id,
+            request_id=str(uuid.uuid4()),
+            data={
+                "narrative": narrative,
+                "raw_fortune": fortune_data
+            }
+        )
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error generating fortune narrative: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating fortune narrative: {str(e)}")
+
+@router.get("/fortune/explanation", response_model=FortuneExplanationResponse, summary="Get explanation of fortune system")
+async def get_fortune_explanation(
+    openai_client: OpenAIClient = Depends(get_openai_client)
+):
+    """
+    Get an explanation of the Thai fortune (7N9B) system using AI.
+    This endpoint returns an AI-generated explanation of how the system works.
+    """
+    try:
+        # Use OpenAI to generate an explanation
+        explanation_prompt = """
+        Explain the Thai 7-base-9 (7N9B) fortune telling system in a clear, concise way.
+        Include what the system is, how it works, and the meaning of the bases.
+        Structure your response as a JSON object with the following fields:
+        - system_name: The name of the system
+        - description: A brief description of the system
+        - bases: An object describing the four bases
+        - interpretation: How to interpret the numbers
+        
+        Keep your response concise and factual.
+        """
+        
+        completion = await openai_client.chat_completion(
+            messages=[
+                {"role": "system", "content": "You are an expert in Thai fortune telling systems. Respond with JSON only."},
+                {"role": "user", "content": explanation_prompt}
+            ]
+        )
+        
+        # Extract the content from the completion
+        content = completion["choices"][0]["message"]["content"]
+        
+        # Try to parse the JSON
+        try:
+            explanation_data = json.loads(content)
+        except json.JSONDecodeError:
+            # If the AI didn't return valid JSON, create a default explanation
+            explanation_data = {
+                "system_name": "เลข 7 ฐาน 9 (7N9B)",
+                "description": "เลข 7 ฐาน 9 คือศาสตร์การทำนายโชคชะตาโบราณของไทย โดยใช้วันเกิดคำนวณตัวเลขและความหมายต่างๆ",
+                "bases": {
+                    "base1": "เกี่ยวกับวันเกิด - อัตตะ, หินะ, ธานัง, ปิตา, มาตา, โภคา, มัชฌิมา",
+                    "base2": "เกี่ยวกับเดือนเกิด - ตะนุ, กดุมภะ, สหัชชะ, พันธุ, ปุตตะ, อริ, ปัตนิ",
+                    "base3": "เกี่ยวกับปีเกิด - มรณะ, สุภะ, กัมมะ, ลาภะ, พยายะ, ทาสา, ทาสี",
+                    "base4": "ผลรวมของฐาน 1-3"
+                },
+                "interpretation": "ตัวเลขที่สูงในแต่ละฐานแสดงถึงอิทธิพลที่มีผลต่อชีวิตในด้านนั้นๆ"
+            }
+        
+        # Create the response
+        explanation = FortuneExplanation(**explanation_data)
+        
+        response = FortuneExplanationResponse(
+            status=ResponseStatus(success=True),
+            data=explanation,
+            timestamp=int(__import__('time').time())
+        )
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error generating fortune system explanation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating fortune system explanation: {str(e)}")

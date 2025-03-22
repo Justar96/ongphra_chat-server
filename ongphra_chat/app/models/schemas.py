@@ -80,6 +80,8 @@ class ChatResponse(BaseModel):
 class FortuneRequest(BaseModel):
     birthdate: str
     user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    language: Optional[str] = Field(default="thai", description="Language for the fortune response (thai or english)")
     
     @validator('birthdate')
     def validate_birthdate(cls, v):
@@ -89,6 +91,12 @@ class FortuneRequest(BaseModel):
             return v
         except ValueError:
             raise ValueError("Birthdate must be in YYYY-MM-DD format")
+            
+    @validator('language')
+    def validate_language(cls, v):
+        if v and v.lower() not in ["thai", "english"]:
+            raise ValueError("Language must be either 'thai' or 'english'")
+        return v.lower() if v else "thai"
 
 class Base(BaseModel):
     name: str

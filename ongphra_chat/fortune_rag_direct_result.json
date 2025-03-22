@@ -1,0 +1,116 @@
+{
+  "status": "success",
+  "fortune": {
+    "birthdate": "15 January 1990",
+    "formatted_birthdate": "15 January 1990",
+    "day_of_week": "จันทร์",
+    "zodiac_year": "เสือ",
+    "bases": {
+      "base1": 1,
+      "base2": 7,
+      "base3": 4
+    },
+    "top_categories": {
+      "base1": {
+        "name": "attana",
+        "thai_name": "อัตตะ",
+        "meaning": "ตัวท่านเอง",
+        "value": 7
+      },
+      "base2": {
+        "name": "patni",
+        "thai_name": "ปัตนิ",
+        "meaning": "คู่ครอง",
+        "value": 7
+      },
+      "base3": {
+        "name": "labha",
+        "thai_name": "ลาภะ",
+        "meaning": "ลาภยศ โชคลาภ",
+        "value": 6
+      }
+    },
+    "pairs": [
+      {
+        "rank": 1,
+        "heading": "ความสัมพันธ์ระหว่างอัตตะและปัตนิ",
+        "categories": "อัตตะ (7) + ปัตนิ (7)",
+        "meaning": "คุณมีความโดดเด่นในเรื่องอัตตะและปัตนิ ซึ่งส่งผลดีต่อชีวิตของคุณ ความสามารถนี้จะช่วยให้คุณประสบความสำเร็จในหลายด้าน",
+        "influence": "ผสมผสาน",
+        "category_a": "attana",
+        "category_b": "patni",
+        "thai_name_a": "อัตตะ",
+        "thai_name_b": "ปัตนิ",
+        "value_a": 7,
+        "value_b": 7
+      },
+      {
+        "rank": 2,
+        "heading": "ความสัมพันธ์ระหว่างอัตตะและลาภะ",
+        "categories": "อัตตะ (7) + ลาภะ (6)",
+        "meaning": "คุณมีความโดดเด่นในเรื่องอัตตะและลาภะ ซึ่งส่งผลดีต่อชีวิตของคุณ ความสามารถนี้จะช่วยให้คุณประสบความสำเร็จในหลายด้าน",
+        "influence": "ผสมผสาน",
+        "category_a": "attana",
+        "category_b": "labha",
+        "thai_name_a": "อัตตะ",
+        "thai_name_b": "ลาภะ",
+        "value_a": 7,
+        "value_b": 6
+      },
+      {
+        "rank": 3,
+        "heading": "ความสัมพันธ์ระหว่างปัตนิและลาภะ",
+        "categories": "ปัตนิ (7) + ลาภะ (6)",
+        "meaning": "คุณมีความโดดเด่นในเรื่องปัตนิและลาภะ ซึ่งส่งผลดีต่อชีวิตของคุณ ความสามารถนี้จะช่วยให้คุณประสบความสำเร็จในหลายด้าน",
+        "influence": "ผสมผสาน",
+        "category_a": "patni",
+        "category_b": "labha",
+        "thai_name_a": "ปัตนิ",
+        "thai_name_b": "ลาภะ",
+        "value_a": 7,
+        "value_b": 6
+      }
+    ],
+    "summary": "จากวันเกิด 15 January 1990 (จันทร์) เสือ พบว่า:\n\n            คุณมีฐานที่ 1 (1) โดดเด่นในด้านอัตตะ (ตัวท่านเอง)\n            คุณมีฐานที่ 2 (7) โดดเด่นในด้านปัตนิ (คู่ครอง)\n            คุณมีฐานที่ 3 (4) โดดเด่นในด้านลาภะ (ลาภยศ โชคลาภ)\n\n            ความโดดเด่นเหล่านี้แสดงถึงลักษณะเฉพาะของคุณ รวมถึงจุดแข็งและจุดที่ควรพัฒนา",
+    "combination_interpretations": [
+      {
+        "category": "อัตตะ-ปัตนิ",
+        "heading": "ความสัมพันธ์ระหว่างอัตตะและปัตนิ",
+        "meaning": "คุณมีความโดดเด่นในเรื่องอัตตะและปัตนิ ซึ่งส่งผลดีต่อชีวิตของคุณ ความสามารถนี้จะช่วยให้คุณประสบความสำเร็จในหลายด้าน",
+        "influence": "ผสมผสาน"
+      },
+      {
+        "category": "อัตตะ-ลาภะ",
+        "heading": "ความสัมพันธ์ระหว่างอัตตะและลาภะ",
+        "meaning": "คุณมีความโดดเด่นในเรื่องอัตตะและลาภะ ซึ่งส่งผลดีต่อชีวิตของคุณ ความสามารถนี้จะช่วยให้คุณประสบความสำเร็จในหลายด้าน",
+        "influence": "ผสมผสาน"
+      },
+      {
+        "category": "ปัตนิ-ลาภะ",
+        "heading": "ความสัมพันธ์ระหว่างปัตนิและลาภะ",
+        "meaning": "คุณมีความโดดเด่นในเรื่องปัตนิและลาภะ ซึ่งส่งผลดีต่อชีวิตของคุณ ความสามารถนี้จะช่วยให้คุณประสบความสำเร็จในหลายด้าน",
+        "influence": "ผสมผสาน"
+      }
+    ],
+    "rag_interpretations": [
+      {
+        "category": "attana",
+        "value": 7,
+        "interpretation": "When both attana (อัตตะ) and tanu (ตะนุ) have high values, it indicates strong self-identity and confidence.",
+        "source": "knowledge_base"
+      },
+      {
+        "category": "attana",
+        "value": 7,
+        "interpretation": "High values (5-7) in attana (อัตตะ) indicate strong self-confidence and individuality.",
+        "source": "knowledge_base"
+      },
+      {
+        "category": "labha",
+        "value": 6,
+        "interpretation": "When kamma (กัมมะ) has high values but labha (ลาภะ) has low values, it suggests hard work with delayed rewards.",
+        "source": "knowledge_base"
+      }
+    ]
+  }
+}

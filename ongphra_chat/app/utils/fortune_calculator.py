@@ -1,9 +1,16 @@
 from datetime import datetime
-from typing import Tuple, Dict, List, Any
+from typing import Tuple, Dict, List, Any, Optional
 import logging
 import asyncio
 import mysql.connector
 from mysql.connector import Error
+
+from app.utils.fortune_tool import calculate_fortune as tool_calculate_fortune
+from app.utils.fortune_tool import calculate_7n9b_fortune as tool_calculate_7n9b_fortune
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def get_thai_zodiac_year_index(year: int) -> int:
     """Determine the Thai zodiac year based on the Gregorian year."""
@@ -59,6 +66,7 @@ def generate_data(birth_date_str: str) -> Tuple[List[int], List[int], List[int],
 
         return row_1, row_2, row_3, row_4
     except Exception as e:
+        logger.error(f"Error calculating fortune: {str(e)}")
         raise ValueError(f"Error calculating fortune: {str(e)}")
 
 def format_output(row_1: List[int], row_2: List[int], row_3: List[int], row_4: List[int]) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int], List[int]]:
@@ -73,30 +81,80 @@ def format_output(row_1: List[int], row_2: List[int], row_3: List[int], row_4: L
 
     return base_1, base_2, base_3, row_4
 
-def calculate_fortune(date_str: str) -> Dict[str, Any]:
-    """Calculate fortune bases from a birth date.
+def calculate_fortune(birthdate_str, detail_level="normal") -> Dict[str, Any]:
+    """
+    Calculate fortune based on birthdate.
+    This is a compatibility function that wraps our new implementation.
     
     Args:
-        date_str: Birth date in YYYY-MM-DD format
+        birthdate_str: Birthdate in string format (YYYY-MM-DD or DD-MM-YYYY)
+        detail_level: Level of detail (simple, normal, detailed)
         
     Returns:
-        Dict containing the fortune calculation results
+        Dictionary with fortune calculation results
     """
     try:
-        # Validate the date format
-        datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        # Handle different date formats
+        if isinstance(birthdate_str, datetime):
+            # If it's already a datetime object, use it directly
+            return tool_calculate_fortune(birthdate_str, detail_level)
+        else:
+            # Otherwise treat it as a string
+            return tool_calculate_7n9b_fortune(birthdate_str, detail_level)
+    except Exception as e:
+        logger.error(f"Error in calculate_fortune: {e}")
+        raise
 
-    # Generate and format the fortune data
-    row_1, row_2, row_3, row_4 = generate_data(date_str)
-    base_1, base_2, base_3, base_4 = format_output(row_1, row_2, row_3, row_4)
-    
+def get_category_meanings_dict() -> Dict[str, str]:
+    """Return the dictionary of category meanings."""
     return {
-        "base1": base_1,
-        "base2": base_2,
-        "base3": base_3,
-        "base4": base_4
+        "กดุมภะ": "รายได้รายจ่าย",
+        "กัมมะ": "หน้าที่การงาน",
+        "ตะนุ": "ตัวท่านเอง",
+        "ทาสา": "เหน็จเหนื่อยเพื่อคนอื่น ส่วนรวม",
+        "ทาสี": "การเหน็จเหนื่อยเพื่อตัวเอง",
+        "ธานัง": "เรื่องเงิน ๆ ทอง ๆ",
+        "ปัตนิ": "คู่ครอง",
+        "ปิตา": "พ่อหรือผู้ใหญ่ เรื่องนอกบ้าน",
+        "ปุตตะ": "เรื่องลูก การเริ่มต้น",
+        "พยายะ": "สิ่งไม่ดี เรื่องปิดบัง ซ่อนเร้น",
+        "พันธุ": "ญาติพี่น้อง",
+        "มรณะ": "เรื่องเจ็บป่วย",
+        "มัชฌิมา": "เรื่องกลาง ๆ ไม่หนักหนา",
+        "มาตา": "แม่หรือผู้ใหญ่ เรื่องในบ้าน เรื่องส่วนตัว",
+        "ลาภะ": "ลาภยศ โชคลาภ",
+        "สหัชชะ": "เพื่อนฝูง การติดต่อ",
+        "สุภะ": "ความเจริญรุ่งเรือง",
+        "หินะ": "ความผิดหวัง",
+        "อริ": "ปัญหา อุปสรรค",
+        "อัตตะ": "ตัวท่านเอง",
+        "โภคา": "สินทรัพย์"
+    }
+
+def get_house_types_dict() -> Dict[str, str]:
+    """Return the dictionary of house types."""
+    return {
+        "กดุมภะ": "กาลปักษ์",
+        "กัมมะ": "เกณฑ์ชะตา",
+        "ตะนุ": "จร",
+        "ทาสา": "กาลปักษ์",
+        "ทาสี": "เกณฑ์ชะตา",
+        "ธานัง": "จร",
+        "ปัตนิ": "กาลปักษ์",
+        "ปิตา": "เกณฑ์ชะตา",
+        "ปุตตะ": "จร",
+        "พยายะ": "กาลปักษ์",
+        "พันธุ": "เกณฑ์ชะตา",
+        "มรณะ": "กาลปักษ์",
+        "มัชฌิมา": "กาลปักษ์",
+        "มาตา": "เกณฑ์ชะตา",
+        "ลาภะ": "จร",
+        "สหัชชะ": "กาลปักษ์",
+        "สุภะ": "เกณฑ์ชะตา",
+        "หินะ": "กาลปักษ์",
+        "อริ": "กาลปักษ์",
+        "อัตตะ": "กาลปักษ์",
+        "โภคา": "จร"
     }
 
 def get_category_meaning(category: str) -> str:
