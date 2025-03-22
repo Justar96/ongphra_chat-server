@@ -7,6 +7,7 @@ import uuid
 class ResponseStatus(BaseModel):
     success: bool = True
     message: Optional[str] = None
+    error: Optional[str] = None
     error_code: Optional[int] = None
 
 # Message models
@@ -46,36 +47,33 @@ class ToolCallOutput(BaseModel):
 class ChatChoice(BaseModel):
     index: int
     message: Dict[str, Any]
-    finish_reason: str
+    finish_reason: Optional[str] = None
 
 class ChatCompletion(BaseModel):
     id: str
     created: int
     model: str
     choices: List[ChatChoice]
-    usage: Optional[Dict[str, Any]] = None
+    usage: Optional[Dict[str, int]] = None
     
     @root_validator(pre=True)
-    def clean_usage(cls, values):
-        """Clean usage data to handle complex nested structures."""
-        if 'usage' in values and values['usage'] is not None:
-            # Convert any nested dictionaries in usage to integers or remove them
-            usage = values['usage']
-            if isinstance(usage, dict):
-                # Remove complex nested structures like token details
-                if 'prompt_tokens_details' in usage:
-                    del usage['prompt_tokens_details']
-                if 'completion_tokens_details' in usage:
-                    del usage['completion_tokens_details']
-            values['usage'] = usage
+    def ensure_fields(cls, values):
+        """Ensure all required fields are present"""
+        if 'id' not in values:
+            values['id'] = str(uuid.uuid4())
+        if 'created' not in values:
+            values['created'] = int(datetime.now().timestamp())
+        if 'model' not in values:
+            values['model'] = "default-model"
         return values
 
 class ChatResponse(BaseModel):
     status: ResponseStatus = Field(default_factory=ResponseStatus)
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    response: ChatCompletion
     user_id: str
     session_id: str
-    response: ChatCompletion
+    tool_result: Optional[Dict[str, Any]] = None
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
 
 # Fortune models
@@ -117,16 +115,16 @@ class CombinationInterpretation(BaseModel):
     influence: str
 
 class FortuneResult(BaseModel):
-    bases: FortuneBaseResponse
-    individual_interpretations: List[IndividualInterpretation]
-    combination_interpretations: List[CombinationInterpretation]
-    summary: str
+    bases: Dict[str, Dict[str, int]]
+    summary: Optional[str] = None
+    combination_interpretations: Optional[List[Dict[str, Any]]] = None
+    individual_interpretations: Optional[List[Dict[str, Any]]] = None
 
 class FortuneResponse(BaseModel):
     status: ResponseStatus = Field(default_factory=ResponseStatus)
     user_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    result: FortuneResult
+    result: Union[FortuneResult, Dict[str, Any]]
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
 
 # Generic API Response
@@ -164,15 +162,22 @@ class StreamingResponse(BaseModel):
         arbitrary_types_allowed = True
 
 class StreamingChatRequest(BaseModel):
-    message: str
+    prompt: str
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     include_history: bool = True
 
 class StreamingChatResponse(BaseModel):
     status: str
-    message_id: str
+    message_id: Optional[str] = None
+    content: Optional[str] = None
+    error: Optional[str] = None
     user_id: Optional[str] = None
     session_id: Optional[str] = None
-    content: str
+    complete_response: Optional[str] = None
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
+    
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        result = super().dict(*args, **kwargs)
+        # Remove None values for cleaner output
+        return {k: v for k, v in result.items() if v is not None}

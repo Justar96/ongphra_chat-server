@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 import json
 from datetime import datetime
 import logging
+import asyncio
 
 from app.services.chat_service import ChatService, get_chat_service
 from app.utils.openai_client import OpenAIClient, get_openai_client
 from app.models.schemas import Message, ChatMessageRequest, ChatResponse, ResponseStatus, ChatChoice, ChatCompletion, StreamingChatRequest, StreamingChatResponse
 from app.config.database import get_db
+from app.utils.tool_handler import tool_handler, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +132,6 @@ async def chat_message(
         Chatbot response
     """
     try:
-        # Create a simple message structure
-        messages = [{"role": "user", "content": request.message}]
-        
         # Generate user_id and session_id if not provided
         user_id = request.user_id or str(uuid.uuid4())
         
@@ -149,6 +148,131 @@ async def chat_message(
             if not session:
                 session = chat_service.create_session(user_id)
             session_id = session.id
+            
+        # Process message with tool handler
+        tool_result = await tool_handler.process(
+            message=request.message,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # If a tool fully handled the message and streaming is requested
+        if tool_result.handled and request.stream:
+            # Save the user message
+            chat_service.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                role="user",
+                content=request.message
+            )
+            
+            # Generate a message ID for the response
+            message_id = str(uuid.uuid4())
+            
+            # Save the assistant's response from the tool
+            if tool_result.response:
+                chat_service.add_message(
+                    session_id=session_id,
+                    user_id=user_id,
+                    role="assistant",
+                    content=tool_result.response
+                )
+            
+            # Create streaming response function for tool result
+            async def stream_tool_result():
+                # Connected status
+                yield f"data: {json.dumps({'status': 'connected', 'session_id': session_id})}\n\n"
+                
+                # If we have a tool response, simulate streaming it character by character
+                if tool_result.response:
+                    # Simulate streaming by breaking the response into chunks
+                    response_text = tool_result.response
+                    chunk_size = max(1, len(response_text) // 10)  # Divide into ~10 chunks
+                    
+                    for i in range(0, len(response_text), chunk_size):
+                        chunk = response_text[i:i+chunk_size]
+                        yield f"data: {json.dumps({'status': 'streaming', 'message_id': message_id, 'session_id': session_id, 'user_id': user_id, 'content': chunk})}\n\n"
+                        await asyncio.sleep(0.1)  # Add a small delay to simulate streaming
+                
+                # Complete response
+                complete_data = {
+                    'status': 'complete',
+                    'message_id': message_id,
+                    'session_id': session_id,
+                    'user_id': user_id,
+                    'content': '',
+                    'complete_response': tool_result.response or '',
+                    'tool_result': tool_result.data
+                }
+                yield f"data: {json.dumps(complete_data)}\n\n"
+            
+            # Return streaming response
+            response = StreamingResponse(
+                stream_tool_result(),
+                media_type="text/event-stream"
+            )
+            
+            # Add SSE headers
+            response.headers["Cache-Control"] = "no-cache"
+            response.headers["Connection"] = "keep-alive"
+            response.headers["X-Accel-Buffering"] = "no"
+            
+            return response
+            
+        # If a tool fully handled the message but no streaming is requested
+        elif tool_result.handled:
+            logger.info(f"Message handled by tool: {tool_result}")
+            
+            # Save the user message
+            chat_service.add_message(
+                session_id=session_id,
+                user_id=user_id,
+                role="user",
+                content=request.message
+            )
+            
+            # Generate a message ID for the response
+            message_id = str(uuid.uuid4())
+            
+            # Save the assistant's response from the tool
+            if tool_result.response:
+                chat_service.add_message(
+                    session_id=session_id,
+                    user_id=user_id,
+                    role="assistant",
+                    content=tool_result.response
+                )
+            
+            # Create a chat completion from the tool result
+            chat_completion = ChatCompletion(
+                id=f"tool-{message_id}",
+                created=int(datetime.now().timestamp()),
+                model="tool-handler",
+                choices=[
+                    ChatChoice(
+                        index=0,
+                        message={"role": "assistant", "content": tool_result.response or ""},
+                        finish_reason="tool_completion"
+                    )
+                ],
+                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            )
+            
+            # Return the response
+            return ChatResponse(
+                status=ResponseStatus(success=True),
+                message_id=message_id,
+                response=chat_completion,
+                user_id=user_id,
+                session_id=session_id,
+                tool_result=tool_result.data
+            )
+        
+        # Use the modified message if provided by the tool
+        message = tool_result.modified_message or request.message
+        
+        # Create a simple message structure
+        messages = [{"role": "user", "content": message}]
         
         # Handle streaming response
         if request.stream:
@@ -196,36 +320,26 @@ async def chat_message(
         logger.error(f"Error processing message: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
 
-@router.post("/stream", summary="Stream a chat conversation")
+@router.post("/stream", summary="Stream a chat conversation (POST method)")
 async def chat_stream(
-    request: ChatMessageRequest,
+    request: Request,
+    chat_request: ChatRequest,
     openai_client: OpenAIClient = Depends(get_openai_client),
-    chat_service: ChatService = Depends(get_chat_service)
+    chat_service: ChatService = Depends(get_chat_service),
 ):
-    """
-    Send a message to the chatbot and get a streaming response
-    
-    Args:
-        message: User's message
-        user_id: Optional user ID for conversation tracking
-        session_id: Optional session ID for conversation tracking
-        
-    Returns:
-        Streaming response from the chatbot
-    """
     try:
-        # Create a simple message structure
-        messages = [{"role": "user", "content": request.message}]
+        # Convert Pydantic models to dictionaries
+        messages = [msg.to_dict() for msg in chat_request.messages]
         
         # Generate user_id and session_id if not provided
-        user_id = request.user_id or str(uuid.uuid4())
+        user_id = chat_request.user_id or str(uuid.uuid4())
         
         # Get or create session
-        if request.session_id:
-            session = chat_service.get_session(request.session_id)
+        if chat_request.session_id:
+            session = chat_service.get_session(chat_request.session_id)
             # If session doesn't exist but ID was provided, create with that ID
             if not session:
-                session = chat_service.create_session(user_id, id=request.session_id)
+                session = chat_service.create_session(user_id, id=chat_request.session_id)
             session_id = session.id
         else:
             # Get active session or create new one
@@ -234,19 +348,140 @@ async def chat_stream(
                 session = chat_service.create_session(user_id)
             session_id = session.id
         
-        # Return a streaming response
-        async def stream_generator():
-            async for chunk in openai_client.stream_chat_completion(
-                messages=messages, 
-                user_id=user_id,
-                session_id=session_id
-            ):
-                yield f"data: {json.dumps(chunk.dict())}\n\n"
-                
-        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+        # Handle streaming response
+        if chat_request.stream:
+            async def stream_generator():
+                async for chunk in openai_client.stream_chat_completion(
+                    messages=messages, 
+                    user_id=user_id,
+                    session_id=session_id
+                ):
+                    yield json.dumps(chunk.dict()) + "\n"
+                    
+            return StreamingResponse(stream_generator(), media_type="text/event-stream")
+        
+        # Handle regular response
+        openai_response = await openai_client.chat_completion(messages, session_id=session_id, user_id=user_id, stream=False)
+        
+        # Convert to ChatCompletion model
+        chat_completion = ChatCompletion(
+            id=openai_response["id"],
+            created=openai_response["created"],
+            model=openai_response["model"],
+            choices=[
+                ChatChoice(
+                    index=i,
+                    message=choice["message"],
+                    finish_reason=choice["finish_reason"]
+                )
+                for i, choice in enumerate(openai_response["choices"])
+            ],
+            usage=openai_response.get("usage", None)
+        )
+        
+        # Create response
+        return ChatResponse(
+            status=ResponseStatus(success=True),
+            message_id=str(uuid.uuid4()),
+            response=chat_completion,
+            user_id=user_id,
+            session_id=session_id
+        )
     except Exception as e:
-        logger.error(f"Error processing streaming request: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing streaming request: {str(e)}")
+        logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
+@router.get("/stream", summary="Stream a chat conversation (GET method for EventSource)")
+async def chat_stream_get(
+    message: str,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    openai_client: OpenAIClient = Depends(get_openai_client),
+    chat_service: ChatService = Depends(get_chat_service)
+):
+    try:
+        # Create a simple message structure similar to the POST endpoint
+        chat_request = {
+            "message": message,
+            "user_id": user_id,
+            "session_id": session_id
+        }
+        
+        # Get or create session
+        session = await chat_service.get_or_create_session(user_id, session_id)
+        session_id = session.id
+        
+        # Save user message
+        message_id = str(uuid.uuid4())
+        await openai_client.save_message(session_id, user_id, "user", message, message_id)
+        
+        # Get streaming response from OpenAI
+        async def generate():
+            try:
+                # Send SSE headers for EventSource compatibility
+                yield "data: {\"status\":\"connected\",\"session_id\":\"" + session_id + "\"}\n\n"
+                
+                # Stream completion
+                async for chunk in openai_client.stream_chat_completion(session_id):
+                    if "content" in chunk and chunk["content"]:
+                        response_data = {
+                            "status": "streaming",
+                            "message_id": message_id,
+                            "session_id": session_id,
+                            "user_id": user_id,
+                            "content": chunk["content"]
+                        }
+                        yield f"data: {json.dumps(response_data)}\n\n"
+                
+                # Complete response
+                complete_response = await openai_client.get_last_assistant_message(session_id)
+                complete_data = {
+                    "status": "complete",
+                    "message_id": message_id,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "content": "",
+                    "complete_response": complete_response
+                }
+                yield f"data: {json.dumps(complete_data)}\n\n"
+                
+            except Exception as e:
+                logger.error(f"Error in stream generation: {str(e)}")
+                error_data = {
+                    "status": "error",
+                    "message_id": message_id,
+                    "error": str(e)
+                }
+                yield f"data: {json.dumps(error_data)}\n\n"
+        
+        # Configure CORS headers for SSE
+        response = StreamingResponse(
+            generate(),
+            media_type="text/event-stream"
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Connection"] = "keep-alive"
+        response.headers["X-Accel-Buffering"] = "no"
+        
+        # Add CORS headers
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in chat_stream_get: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/ws-available", summary="Check if WebSocket chat is available")
+async def websocket_available():
+    """Check if WebSocket chat endpoint is available"""
+    return {
+        "status": ResponseStatus(success=False),
+        "available": False,
+        "message": "WebSocket chat is no longer available. Please use HTTP streaming."
+    }
 
 @router.get("/sessions", summary="Get user's chat sessions")
 async def get_user_sessions(

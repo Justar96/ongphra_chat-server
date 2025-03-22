@@ -13,6 +13,8 @@ from app.config.settings import get_settings
 from app.config.database import engine, Base, get_db
 from app.models.database import ChatSession, ChatMessage  # Import models to ensure they're registered
 from app.services.chat_service import ChatService
+from app.utils.openai_client import OpenAIClient, get_openai_client
+from app.utils.tool_handler import tool_handler
 
 # Get application settings
 settings = get_settings()

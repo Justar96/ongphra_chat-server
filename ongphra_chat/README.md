@@ -73,7 +73,7 @@ Send a single message to the chatbot and get a response.
 
 #### `POST /chat/stream`
 
-Send a message and receive streaming responses.
+Send a message and receive streaming responses using POST method.
 
 **Request Body:**
 ```json
@@ -93,6 +93,145 @@ data: {"status":"streaming","message_id":"msg-uuid","user_id":"user-123","sessio
 data: {"status":"streaming","message_id":"msg-uuid","user_id":"user-123","session_id":"session-456","content":"ค่ะ"}
 
 data: {"status":"complete","message_id":"msg-uuid","user_id":"user-123","session_id":"session-456","content":"","complete_response":"สวัสดีค่ะ ดิฉันสบายดี ขอบคุณที่ถาม คุณล่ะคะ เป็นอย่างไรบ้าง?"}
+```
+
+#### `GET /chat/stream` (EventSource Support)
+
+Stream chat responses using GET method for better compatibility with EventSource/SSE.
+
+**Query Parameters:**
+- `message`: The user's message (required)
+- `user_id`: User identifier (optional)
+- `session_id`: Session identifier (optional)
+
+**Example URL:**
+```
+GET /api/v1/chat/stream?message=สวัสดี&user_id=user-123&session_id=session-456
+```
+
+**Response:**
+Server-sent events with the same format as the POST endpoint. This is the recommended method for browser-based EventSource implementations.
+
+**Example JavaScript usage:**
+```javascript
+// Using native EventSource
+const params = new URLSearchParams({
+  message: "สวัสดี คุณสบายดีไหม?",
+  user_id: "user-123",
+  session_id: "session-456"
+});
+
+const eventSource = new EventSource(`/api/v1/chat/stream?${params.toString()}`);
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data);
+  
+  if (data.status === "complete") {
+    eventSource.close();
+  }
+};
+
+eventSource.onerror = (error) => {
+  console.error("EventSource error:", error);
+  eventSource.close();
+};
+```
+
+### Check WebSocket Availability
+
+#### `GET /chat/ws-available`
+
+Check if the WebSocket chat endpoint is available.
+
+**Response:**
+```json
+{
+  "status": {
+    "success": true
+  },
+  "available": true,
+  "websocket_url": "/api/v1/ws/chat"
+}
+```
+
+### WebSocket Chat Connection
+
+#### `WebSocket /api/v1/ws/chat`
+
+Connect to the WebSocket endpoint to receive real-time streaming responses.
+
+**Connection Process:**
+1. Connect to the WebSocket endpoint
+2. Send initial connection parameters as JSON
+3. Exchange messages
+
+**Initial Connection Message:**
+```json
+{
+  "user_id": "user-123",
+  "session_id": "session-456"
+}
+```
+
+**Send Message:**
+```json
+{
+  "message": "สวัสดี คุณสบายดีไหม?"
+}
+```
+
+**Receive Messages:**
+
+1. Connection Confirmation:
+```json
+{
+  "event": "connected",
+  "user_id": "user-123",
+  "session_id": "session-456"
+}
+```
+
+2. Message Received Confirmation:
+```json
+{
+  "event": "message_received",
+  "message_id": "msg-uuid",
+  "user_id": "user-123"
+}
+```
+
+3. Content Chunks:
+```json
+{
+  "event": "chunk",
+  "message_id": "msg-uuid",
+  "content": "สวัสดี",
+  "user_id": "user-123",
+  "session_id": "session-456"
+}
+```
+
+4. Completion:
+```json
+{
+  "event": "complete",
+  "message_id": "msg-uuid",
+  "content": "สวัสดีค่ะ ดิฉันสบายดี ขอบคุณที่ถาม คุณล่ะคะ เป็นอย่างไรบ้าง?",
+  "user_id": "user-123",
+  "session_id": "session-456"
+}
+```
+
+5. Error (if applicable):
+```json
+{
+  "event": "error",
+  "message_id": "msg-uuid",
+  "error": "Error message",
+  "user_id": "user-123",
+  "session_id": "session-456"
+}
 ```
 
 ### Get Chat Sessions
@@ -476,21 +615,225 @@ sendBtn.addEventListener('click', async () => {
 });
 ```
 
-#### Streaming Chat Implementation:
+#### WebSocket Chat Implementation:
 
 ```javascript
-function streamMessage(message, userId, sessionId = null) {
-  const eventSource = new EventSource(`https://your-api-base-url.com/api/v1/chat/stream?message=${encodeURIComponent(message)}&user_id=${userId}${sessionId ? `&session_id=${sessionId}` : ''}`);
+class ChatWebSocket {
+  constructor(baseUrl, userId, sessionId = null) {
+    this.userId = userId;
+    this.sessionId = sessionId;
+    this.ws = null;
+    this.baseUrl = baseUrl; 
+    this.messageCallbacks = {};
+    this.onConnectionCallback = null;
+    this.onErrorCallback = null;
+    this.connected = false;
+    this.currentMessageId = null;
+    this.pendingMessages = [];
+    this.responseBuffer = {};
+  }
   
+  connect() {
+    // Create WebSocket connection
+    this.ws = new WebSocket(`${this.baseUrl}/api/v1/ws/chat`);
+    
+    this.ws.onopen = () => {
+      // Send connection parameters when socket opens
+      this.ws.send(JSON.stringify({
+        user_id: this.userId,
+        session_id: this.sessionId
+      }));
+    };
+    
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      
+      if (data.event === 'connected') {
+        this.connected = true;
+        this.sessionId = data.session_id;
+        
+        // Process any pending messages
+        if (this.pendingMessages.length > 0) {
+          this.pendingMessages.forEach(msg => this.sendMessage(msg));
+          this.pendingMessages = [];
+        }
+        
+        if (this.onConnectionCallback) {
+          this.onConnectionCallback(data);
+        }
+      }
+      else if (data.event === 'message_received') {
+        this.currentMessageId = data.message_id;
+        // Initialize buffer for this message
+        this.responseBuffer[this.currentMessageId] = '';
+      }
+      else if (data.event === 'chunk') {
+        // Add chunk to buffer
+        this.responseBuffer[data.message_id] += data.content;
+        
+        // Call the callback with current data
+        if (this.messageCallbacks[data.message_id]) {
+          this.messageCallbacks[data.message_id]({
+            type: 'chunk',
+            content: data.content,
+            fullContent: this.responseBuffer[data.message_id]
+          });
+        }
+      }
+      else if (data.event === 'complete') {
+        // Ensure we have the complete message
+        if (this.messageCallbacks[data.message_id]) {
+          this.messageCallbacks[data.message_id]({
+            type: 'complete',
+            content: data.content
+          });
+          
+          // Clean up callback and buffer
+          delete this.messageCallbacks[data.message_id];
+          delete this.responseBuffer[data.message_id];
+        }
+      }
+      else if (data.event === 'error') {
+        if (this.onErrorCallback) {
+          this.onErrorCallback(data.error);
+        }
+      }
+    };
+    
+    this.ws.onerror = (error) => {
+      if (this.onErrorCallback) {
+        this.onErrorCallback("WebSocket error: " + JSON.stringify(error));
+      }
+    };
+    
+    this.ws.onclose = () => {
+      this.connected = false;
+      
+      // Attempt to reconnect after delay
+      setTimeout(() => {
+        if (!this.connected) {
+          this.connect();
+        }
+      }, 3000);
+    };
+  }
+  
+  sendMessage(message) {
+    if (!this.connected) {
+      this.pendingMessages.push(message);
+      return null;
+    }
+    
+    const messageId = Date.now().toString();
+    
+    // Send the message
+    this.ws.send(JSON.stringify({
+      message: message
+    }));
+    
+    return messageId;
+  }
+  
+  onMessageUpdate(messageId, callback) {
+    this.messageCallbacks[messageId] = callback;
+  }
+  
+  onConnection(callback) {
+    this.onConnectionCallback = callback;
+  }
+  
+  onError(callback) {
+    this.onErrorCallback = callback;
+  }
+  
+  close() {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+}
+
+// Usage example:
+const userId = localStorage.getItem('userId') || generateUUID();
+let sessionId = localStorage.getItem('currentSessionId');
+
+const chatSocket = new ChatWebSocket('wss://your-api-base-url.com', userId, sessionId);
+
+// Connect to WebSocket
+chatSocket.connect();
+
+// Handle connection event
+chatSocket.onConnection((data) => {
+  console.log('Connected to chat WebSocket:', data);
+  sessionId = data.session_id;
+  localStorage.setItem('currentSessionId', sessionId);
+});
+
+// Handle errors
+chatSocket.onError((error) => {
+  console.error('WebSocket error:', error);
+});
+
+// Send a message
+document.getElementById('send-btn').addEventListener('click', () => {
+  const messageInput = document.getElementById('message-input');
+  const message = messageInput.value;
+  
+  // Add user message to UI
+  addMessageToUI('user', message);
+  messageInput.value = '';
+  
+  // Send via WebSocket
+  const messageId = chatSocket.sendMessage(message);
+  
+  // Create placeholder for assistant response
+  const responseContainer = document.createElement('div');
+  responseContainer.className = 'assistant-message';
+  responseContainer.id = `response-${messageId}`;
+  document.getElementById('chat-container').appendChild(responseContainer);
+  
+  // Handle streaming response
+  chatSocket.onMessageUpdate(messageId, (data) => {
+    if (data.type === 'chunk') {
+      // Update UI with each chunk
+      responseContainer.textContent = data.fullContent;
+    } else if (data.type === 'complete') {
+      // Ensure we have the complete message
+      responseContainer.textContent = data.content;
+    }
+  });
+});
+```
+
+#### Server-Sent Events (SSE) Implementation:
+
+```javascript
+// Using native EventSource API for better compatibility
+function streamChatWithEventSource(message, userId, sessionId = null) {
+  // Build query parameters
+  const params = new URLSearchParams({
+    message: message
+  });
+  
+  if (userId) params.append('user_id', userId);
+  if (sessionId) params.append('session_id', sessionId);
+  
+  // Create EventSource connection - USING GET METHOD
+  const eventSource = new EventSource(`https://your-api-base-url.com/api/v1/chat/stream?${params}`);
+  
+  // Create placeholder for assistant response
   const responseContainer = document.createElement('div');
   responseContainer.className = 'assistant-message';
   document.getElementById('chat-container').appendChild(responseContainer);
+  
+  let fullResponse = '';
   
   eventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
     
     if (data.status === 'streaming') {
-      responseContainer.textContent += data.content;
+      fullResponse += data.content;
+      responseContainer.textContent = fullResponse;
       
       // Update session ID if needed
       if (!sessionId && data.session_id) {
@@ -513,7 +856,25 @@ function streamMessage(message, userId, sessionId = null) {
     responseContainer.innerHTML += '<span class="error">Connection error. Please try again.</span>';
     eventSource.close();
   };
+  
+  // Return the EventSource instance so it can be closed if needed
+  return eventSource;
 }
+
+// Usage
+document.getElementById('send-btn').addEventListener('click', () => {
+  const messageInput = document.getElementById('message-input');
+  const message = messageInput.value;
+  const userId = localStorage.getItem('userId') || generateUUID();
+  const sessionId = localStorage.getItem('currentSessionId');
+  
+  // Add user message to UI
+  addMessageToUI('user', message);
+  messageInput.value = '';
+  
+  // Stream response with EventSource
+  streamChatWithEventSource(message, userId, sessionId);
+});
 ```
 
 ### 3. Implementing Fortune Telling Feature
